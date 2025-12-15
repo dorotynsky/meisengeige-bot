@@ -12,7 +12,8 @@ Create a script that runs via GitHub Actions to monitor updates to the Meisengei
 - Basic functionality tested ✓
 - Showtime parsing fixed and working correctly ✓
 - GitHub Actions configured and tested ✓
-- **Status:** Fully automated monitoring is live! 🎉
+- Poster images added to notifications ✓
+- **Status:** Fully automated with visual notifications! 🎉🎬
 
 ## Chosen Approach
 **HTML Scraping Method** (Updated after analysis)
