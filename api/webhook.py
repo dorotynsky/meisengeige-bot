@@ -268,10 +268,10 @@ async def setup_bot_commands():
 
     try:
         commands = [
+            BotCommand("films", "Показать текущую программу"),
             BotCommand("start", "Подписаться на уведомления"),
-            BotCommand("stop", "Отписаться от уведомлений"),
             BotCommand("status", "Проверить статус подписки"),
-            BotCommand("films", "Показать текущую программу")
+            BotCommand("stop", "Отписаться от уведомлений")
         ]
         await bot.set_my_commands(commands)
         _commands_initialized = True
