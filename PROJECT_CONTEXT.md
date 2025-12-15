@@ -10,6 +10,7 @@ Create a script that runs via GitHub Actions to monitor updates to the Meisengei
 - Project structure created ✓
 - Core modules implemented ✓
 - Basic functionality tested ✓
+- Showtime parsing fixed and working correctly ✓
 - **Next:** Configure GitHub Actions for automated monitoring
 
 ## Chosen Approach
