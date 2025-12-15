@@ -36,7 +36,7 @@ class TelegramNotifier:
         updated_films: List[Film],
     ) -> None:
         """
-        Send notification about program updates.
+        Send notification about program updates with film posters.
 
         Args:
             new_films: List of newly added films
@@ -47,27 +47,83 @@ class TelegramNotifier:
             print("No changes detected, skipping notification")
             return
 
-        message = self._format_update_message(new_films, removed_films, updated_films)
-
         try:
+            # Send header message
+            header = self._format_header(new_films, removed_films, updated_films)
             await self.bot.send_message(
                 chat_id=self.chat_id,
-                text=message,
+                text=header,
                 parse_mode='HTML',
             )
+
+            # Send new films with photos
+            if new_films:
+                for film in new_films:
+                    await self._send_film_with_photo(film, "✨ New Film")
+
+            # Send updated films with photos
+            if updated_films:
+                for film in updated_films:
+                    await self._send_film_with_photo(film, "🔄 Updated")
+
+            # Send removed films summary
+            if removed_films:
+                removed_text = "❌ <b>Removed Films:</b>\n"
+                for film in removed_films:
+                    removed_text += f"• {film.title}\n"
+                await self.bot.send_message(
+                    chat_id=self.chat_id,
+                    text=removed_text,
+                    parse_mode='HTML',
+                )
+
             print("Notification sent successfully")
         except TelegramError as e:
             print(f"Error sending Telegram notification: {e}")
             raise
 
-    def _format_update_message(
+    async def _send_film_with_photo(self, film: Film, prefix: str) -> None:
+        """
+        Send a single film with poster image and details.
+
+        Args:
+            film: Film to send
+            prefix: Label prefix (e.g., "✨ New Film", "🔄 Updated")
+        """
+        caption = self._format_film_caption(film, prefix)
+
+        if film.poster_url:
+            try:
+                await self.bot.send_photo(
+                    chat_id=self.chat_id,
+                    photo=film.poster_url,
+                    caption=caption,
+                    parse_mode='HTML',
+                )
+            except TelegramError as e:
+                # If photo fails, send as text message
+                print(f"Failed to send photo for {film.title}: {e}")
+                await self.bot.send_message(
+                    chat_id=self.chat_id,
+                    text=caption,
+                    parse_mode='HTML',
+                )
+        else:
+            # No poster - send as text
+            await self.bot.send_message(
+                chat_id=self.chat_id,
+                text=caption,
+                parse_mode='HTML',
+            )
+
+    def _format_header(
         self,
         new_films: List[Film],
         removed_films: List[Film],
         updated_films: List[Film],
     ) -> str:
         """
-        Format update message for Telegram.
+        Format header message with summary.
 
         Args:
             new_films: List of newly added films
@@ -75,29 +131,71 @@ class TelegramNotifier:
             updated_films: List of updated films
 
         Returns:
-            Formatted message string
+            Formatted header string
         """
         lines = ["🎬 <b>Meisengeige Program Update</b>\n"]
 
+        summary_parts = []
         if new_films:
-            lines.append(f"✨ <b>New Films ({len(new_films)}):</b>")
-            for film in new_films:
-                lines.append(self._format_film(film))
-            lines.append("")
-
+            summary_parts.append(f"✨ {len(new_films)} new film(s)")
         if updated_films:
-            lines.append(f"🔄 <b>Updated Films ({len(updated_films)}):</b>")
-            for film in updated_films:
-                lines.append(self._format_film(film))
-            lines.append("")
-
+            summary_parts.append(f"🔄 {len(updated_films)} updated")
         if removed_films:
-            lines.append(f"❌ <b>Removed Films ({len(removed_films)}):</b>")
-            for film in removed_films:
-                lines.append(f"• {film.title}")
+            summary_parts.append(f"❌ {len(removed_films)} removed")
+
+        if summary_parts:
+            lines.append(", ".join(summary_parts))
+
+        lines.append("\n🔗 https://www.cinecitta.de/programm/meisengeige/")
+
+        return "\n".join(lines)
+
+    def _format_film_caption(self, film: Film, prefix: str) -> str:
+        """
+        Format film information as photo caption.
+
+        Args:
+            film: Film to format
+            prefix: Label prefix
+
+        Returns:
+            Formatted caption string
+        """
+        lines = [f"{prefix}: <b>{film.title}</b>\n"]
+
+        # Add genres, FSK, and duration
+        info_parts = []
+        if film.genres:
+            info_parts.append(", ".join(film.genres))
+        if film.fsk_rating:
+            info_parts.append(film.fsk_rating)
+        if film.duration:
+            info_parts.append(f"{film.duration}min")
+
+        if info_parts:
+            lines.append(" | ".join(info_parts))
             lines.append("")
 
-        lines.append("🔗 https://www.cinecitta.de/programm/meisengeige/")
+        # Add description (truncate if too long)
+        if film.description:
+            desc = film.description
+            if len(desc) > 200:
+                desc = desc[:197] + "..."
+            lines.append(desc)
+            lines.append("")
+
+        # Add showtimes
+        if film.showtimes:
+            lines.append("<b>Showtimes:</b>")
+            showtime_count = len(film.showtimes)
+            shown_showtimes = film.showtimes[:5]  # Show up to 5
+
+            for st in shown_showtimes:
+                lang_info = f" ({st.language})" if st.language else ""
+                lines.append(f"📅 {st.date} {st.time} - {st.room}{lang_info}")
+
+            if showtime_count > 5:
+                lines.append(f"... +{showtime_count - 5} more")
 
         return "\n".join(lines)
 
