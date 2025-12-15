@@ -117,6 +117,76 @@ class LanguageManager:
         return self.collection.find_one({'chat_id': chat_id}) is not None
 
 
+# User Version Manager for tracking bot updates
+class UserVersionManager:
+    """Manages user version tracking for update notifications."""
+
+    def __init__(self):
+        """Initialize version manager with MongoDB."""
+        self.db = get_mongodb_database()
+        self.collection = self.db['user_versions']
+        # Create index on chat_id for faster queries
+        self.collection.create_index('chat_id', unique=True)
+
+    def set_version(self, chat_id: int, version: str) -> None:
+        """Set the bot version that user has seen."""
+        self.collection.update_one(
+            {'chat_id': chat_id},
+            {'$set': {'version': version}},
+            upsert=True
+        )
+
+    def get_version(self, chat_id: int) -> str:
+        """Get the bot version that user has seen (default: '0.0.0')."""
+        doc = self.collection.find_one({'chat_id': chat_id})
+        return doc['version'] if doc else '0.0.0'
+
+
+# Bot version and update messages
+BOT_VERSION = '1.1.0'
+
+VERSION_UPDATES = {
+    '1.1.0': {
+        'ru': '''🎉 <b>Обновление бота v1.1.0</b>
+
+<b>Что нового:</b>
+• 🌍 Поддержка трёх языков (Русский, Deutsch, English)
+• 💾 Постоянное хранение подписок в MongoDB
+• 🔄 Подписки больше не теряются при обновлениях
+• 🌐 Меню команд на вашем языке Telegram
+
+<b>Новые команды:</b>
+• /language - Изменить язык в любое время
+
+Просто продолжайте пользоваться ботом! 🎬''',
+        'de': '''🎉 <b>Bot-Update v1.1.0</b>
+
+<b>Was ist neu:</b>
+• 🌍 Unterstützung für drei Sprachen (Russisch, Deutsch, Englisch)
+• 💾 Dauerhafte Speicherung von Abonnements in MongoDB
+• 🔄 Abonnements gehen bei Updates nicht mehr verloren
+• 🌐 Befehlsmenü in Ihrer Telegram-Sprache
+
+<b>Neue Befehle:</b>
+• /language - Sprache jederzeit ändern
+
+Nutzen Sie den Bot einfach weiter! 🎬''',
+        'en': '''🎉 <b>Bot Update v1.1.0</b>
+
+<b>What's new:</b>
+• 🌍 Support for three languages (Russian, Deutsch, English)
+• 💾 Persistent subscription storage in MongoDB
+• 🔄 Subscriptions no longer lost on updates
+• 🌐 Command menu in your Telegram language
+
+<b>New commands:</b>
+• /language - Change language anytime
+
+Just keep using the bot! 🎬'''
+    }
+}
+
+
 # Translations dictionary
 TRANSLATIONS = {
     'ru': {
@@ -141,6 +211,10 @@ TRANSLATIONS = {
         'showtimes': '<b>Сеансы:</b>',
         'back_to_list': '◀️ Вернуться к списку',
         'unknown_command': 'Неизвестная команда.\n\nИспользуйте меню команд (☰) для управления подпиской.',
+        'broadcast_no_permission': '❌ У вас нет прав для отправки рассылок.',
+        'broadcast_usage': '📢 Использование: /broadcast <сообщение>\n\nОтправит сообщение всем подписчикам.',
+        'broadcast_sending': '📤 Отправка сообщения {count} подписчикам...',
+        'broadcast_success': '✅ Сообщение успешно отправлено {success} из {total} подписчиков.',
     },
     'de': {
         'choose_language': '🌍 Sprache wählen',
@@ -164,6 +238,10 @@ TRANSLATIONS = {
         'showtimes': '<b>Vorstellungen:</b>',
         'back_to_list': '◀️ Zurück zur Liste',
         'unknown_command': 'Unbekannter Befehl.\n\nVerwenden Sie das Befehlsmenü (☰) zur Verwaltung.',
+        'broadcast_no_permission': '❌ Sie haben keine Berechtigung zum Senden von Broadcasts.',
+        'broadcast_usage': '📢 Verwendung: /broadcast <Nachricht>\n\nSendet Nachricht an alle Abonnenten.',
+        'broadcast_sending': '📤 Sende Nachricht an {count} Abonnenten...',
+        'broadcast_success': '✅ Nachricht erfolgreich an {success} von {total} Abonnenten gesendet.',
     },
     'en': {
         'choose_language': '🌍 Choose language',
@@ -187,6 +265,10 @@ TRANSLATIONS = {
         'showtimes': '<b>Showtimes:</b>',
         'back_to_list': '◀️ Back to list',
         'unknown_command': 'Unknown command.\n\nUse the command menu (☰) to manage your subscription.',
+        'broadcast_no_permission': '❌ You don\'t have permission to send broadcasts.',
+        'broadcast_usage': '📢 Usage: /broadcast <message>\n\nWill send message to all subscribers.',
+        'broadcast_sending': '📤 Sending message to {count} subscribers...',
+        'broadcast_success': '✅ Message successfully sent to {success} out of {total} subscribers.',
     }
 }
 
@@ -386,6 +468,7 @@ if not BOT_TOKEN:
 
 subscriber_manager = SubscriberManager()
 language_manager = LanguageManager()
+version_manager = UserVersionManager()
 
 # Track if bot commands have been set up
 _commands_initialized = False
@@ -580,6 +663,96 @@ async def handle_language_command(bot: Bot, chat_id: int) -> None:
         text="🌍 Выберите язык / Choose language / Sprache wählen",
         reply_markup=reply_markup
     )
+
+
+async def check_and_notify_version_update(bot: Bot, chat_id: int) -> None:
+    """
+    Check if user needs to see version update notification.
+
+    Args:
+        bot: Bot instance
+        chat_id: User's chat ID
+    """
+    # Only notify subscribed users
+    if not subscriber_manager.is_subscribed(chat_id):
+        return
+
+    user_version = version_manager.get_version(chat_id)
+
+    # If user is on old version and there's an update message
+    if user_version != BOT_VERSION and BOT_VERSION in VERSION_UPDATES:
+        # Get user's language
+        lang = language_manager.get_language(chat_id)
+
+        # Get update message in user's language
+        update_message = VERSION_UPDATES[BOT_VERSION].get(lang, VERSION_UPDATES[BOT_VERSION]['en'])
+
+        # Send update notification
+        try:
+            await bot.send_message(
+                chat_id=chat_id,
+                text=update_message,
+                parse_mode='HTML'
+            )
+            # Update user's version
+            version_manager.set_version(chat_id, BOT_VERSION)
+        except Exception as e:
+            print(f"[WARNING] Failed to send version update to {chat_id}: {e}")
+
+
+async def handle_broadcast_command(bot: Bot, chat_id: int, message_text: str) -> str:
+    """
+    Handle /broadcast command - send message to all subscribers (admin only).
+
+    Args:
+        bot: Bot instance
+        chat_id: User's chat ID
+        message_text: Full message text including command
+
+    Returns:
+        Response message
+    """
+    # Check if user is admin
+    admin_chat_ids_str = os.getenv('ADMIN_CHAT_IDS', '')
+    admin_chat_ids = [int(id.strip()) for id in admin_chat_ids_str.split(',') if id.strip()]
+
+    if chat_id not in admin_chat_ids:
+        return get_text(chat_id, 'broadcast_no_permission')
+
+    # Extract message content after /broadcast
+    parts = message_text.split(maxsplit=1)
+    if len(parts) < 2:
+        return get_text(chat_id, 'broadcast_usage')
+
+    broadcast_message = parts[1]
+
+    # Get all subscribers
+    all_subscribers = subscriber_manager.get_all_subscribers()
+    total = len(all_subscribers)
+
+    if total == 0:
+        return "📭 No subscribers to send message to."
+
+    # Send status message
+    await bot.send_message(
+        chat_id=chat_id,
+        text=get_text(chat_id, 'broadcast_sending', count=total)
+    )
+
+    # Send message to all subscribers
+    success_count = 0
+    for subscriber_id in all_subscribers:
+        try:
+            await bot.send_message(
+                chat_id=subscriber_id,
+                text=broadcast_message,
+                parse_mode='HTML'
+            )
+            success_count += 1
+        except Exception as e:
+            print(f"[WARNING] Failed to send broadcast to {subscriber_id}: {e}")
+
+    return get_text(chat_id, 'broadcast_success', success=success_count, total=total)
 
 
 async def handle_films_command(bot: Bot, chat_id: int) -> None:
@@ -798,6 +971,9 @@ async def process_update(update_data: dict) -> dict:
 
         print(f"[DEBUG] Processing command: '{text}' from chat_id: {chat_id}")
 
+        # Check and notify about version updates (for subscribed users)
+        await check_and_notify_version_update(bot, chat_id)
+
         # Route command (only slash commands)
         response_text = None
         parse_mode = None
@@ -821,6 +997,9 @@ async def process_update(update_data: dict) -> dict:
             print("[DEBUG] Routing to handle_films_command")
             await handle_films_command(bot, chat_id)
             return {'status': 'success', 'command': text}
+        elif text.startswith('/broadcast'):
+            print("[DEBUG] Routing to handle_broadcast_command")
+            response_text = await handle_broadcast_command(bot, chat_id, text)
         else:
             # Unknown command
             print(f"[DEBUG] Unknown command: {text}")
