@@ -153,47 +153,69 @@ class MeisengeigeScraper:
         if not table:
             return showtimes
 
-        # Get dates from header
+        # Get dates from header (skip first empty th)
         dates = []
-        header_row = table.find('thead')
-        if header_row:
-            date_cells = header_row.find_all('th')
-            for cell in date_cells:
-                date_text = cell.text.strip()
-                if date_text and date_text != '':
-                    # Format: "Mo. 15.12"
+        thead = table.find('thead')
+        if thead:
+            header_cells = thead.find_all('th')
+            # Skip first header (empty column for room/language info)
+            for cell in header_cells[1:]:
+                date_text = cell.get_text(strip=True)
+                if date_text:
                     dates.append(date_text)
 
-        # Parse rows (each row is a room)
+        if not dates:
+            return showtimes
+
+        # Parse rows
         tbody = table.find('tbody')
-        if tbody:
-            rows = tbody.find_all('tr')
-            for row in rows:
-                # Get room name from first cell
-                room_cell = row.find('td')
-                room = room_cell.text.strip() if room_cell else "Unknown"
+        if not tbody:
+            return showtimes
 
-                # Get language if present (OV, OmU, etc.)
-                language = None
-                lang_elem = row.find('span', class_=re.compile('language|OV|OmU'))
-                if lang_elem:
-                    language = lang_elem.text.strip()
+        rows = tbody.find_all('tr')
+        for row in rows:
+            # First element is <th> containing room and language info
+            room_header = row.find('th')
+            if not room_header:
+                continue
 
-                # Get times from other cells
-                time_cells = row.find_all('td')[1:]  # Skip first cell (room name)
+            # Extract room name
+            room_div = room_header.find('div', class_='font-semibold')
+            room = room_div.get_text(strip=True) if room_div else "Unknown"
 
-                for idx, cell in enumerate(time_cells):
-                    time_text = cell.text.strip()
-                    if time_text and re.match(r'\d{1,2}:\d{2}', time_text):
-                        date = dates[idx] if idx < len(dates) else "Unknown"
-                        showtimes.append(
-                            Showtime(
-                                date=date,
-                                time=time_text,
-                                room=room,
-                                language=language,
+            # Extract language (OV, OmU, etc.)
+            language = None
+            lang_div = room_header.find('div', class_='release-types')
+            if lang_div:
+                lang_span = lang_div.find('span')
+                if lang_span:
+                    lang_text = lang_span.get_text(strip=True)
+                    if lang_text:
+                        language = lang_text
+
+            # Get time cells (all <td> elements)
+            time_cells = row.find_all('td')
+
+            # Match each time cell with corresponding date
+            for idx, cell in enumerate(time_cells):
+                if idx >= len(dates):
+                    break
+
+                # Look for time link inside cell
+                time_link = cell.find('a', class_='performance-link')
+                if time_link:
+                    time_span = time_link.find('span', class_='link-text')
+                    if time_span:
+                        time_text = time_span.get_text(strip=True)
+                        if time_text and re.match(r'\d{1,2}:\d{2}', time_text):
+                            showtimes.append(
+                                Showtime(
+                                    date=dates[idx],
+                                    time=time_text,
+                                    room=room,
+                                    language=language,
+                                )
                             )
-                        )
 
         return showtimes
 
