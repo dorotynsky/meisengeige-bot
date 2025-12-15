@@ -141,23 +141,31 @@ async def handle_status_command(chat_id: int) -> str:
     Returns:
         Message to send (with HTML formatting)
     """
-    is_subscribed = subscriber_manager.is_subscribed(chat_id)
-    total_subscribers = subscriber_manager.get_subscriber_count()
+    try:
+        print(f"[DEBUG] Checking status for chat_id: {chat_id}")
+        is_subscribed = subscriber_manager.is_subscribed(chat_id)
+        total_subscribers = subscriber_manager.get_subscriber_count()
+        print(f"[DEBUG] is_subscribed={is_subscribed}, total_subscribers={total_subscribers}")
 
-    if is_subscribed:
-        return (
-            "✅ <b>Subscription Active</b>\n\n"
-            f"You're receiving Meisengeige program updates.\n"
-            f"Total subscribers: {total_subscribers}\n\n"
-            "Commands:\n"
-            "/stop - Unsubscribe"
-        )
-    else:
-        return (
-            "❌ <b>Not Subscribed</b>\n\n"
-            "You're not receiving notifications.\n\n"
-            "Use /start to subscribe."
-        )
+        if is_subscribed:
+            return (
+                "✅ <b>Subscription Active</b>\n\n"
+                f"You're receiving Meisengeige program updates.\n"
+                f"Total subscribers: {total_subscribers}\n\n"
+                "Commands:\n"
+                "/stop - Unsubscribe"
+            )
+        else:
+            return (
+                "❌ <b>Not Subscribed</b>\n\n"
+                "You're not receiving notifications.\n\n"
+                "Use /start to subscribe."
+            )
+    except Exception as e:
+        print(f"[ERROR] Error in handle_status_command: {e}")
+        import traceback
+        traceback.print_exc()
+        return "Error checking status. Please try again."
 
 
 async def process_update(update_data: dict) -> dict:
@@ -180,19 +188,26 @@ async def process_update(update_data: dict) -> dict:
         text = update.message.text.strip()
         user_first_name = update.message.from_user.first_name or "there"
 
+        print(f"[DEBUG] Processing command: '{text}' from chat_id: {chat_id}")
+
         # Route command
         response_text = None
         parse_mode = None
 
         if text == '/start':
+            print("[DEBUG] Routing to handle_start_command")
             response_text = await handle_start_command(chat_id, user_first_name)
         elif text == '/stop':
+            print("[DEBUG] Routing to handle_stop_command")
             response_text = await handle_stop_command(chat_id)
         elif text == '/status':
+            print("[DEBUG] Routing to handle_status_command")
             response_text = await handle_status_command(chat_id)
             parse_mode = 'HTML'
+            print(f"[DEBUG] Response text: {response_text[:50]}...")
         else:
             # Unknown command
+            print(f"[DEBUG] Unknown command: {text}")
             response_text = (
                 "Unknown command. Available commands:\n"
                 "/start - Subscribe to notifications\n"
@@ -201,12 +216,14 @@ async def process_update(update_data: dict) -> dict:
             )
 
         # Send response
+        print(f"[DEBUG] Sending response with parse_mode={parse_mode}")
         if response_text:
             await bot.send_message(
                 chat_id=chat_id,
                 text=response_text,
                 parse_mode=parse_mode
             )
+            print("[DEBUG] Message sent successfully")
 
         return {'status': 'success', 'command': text}
 
