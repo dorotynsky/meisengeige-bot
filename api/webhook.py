@@ -5,7 +5,7 @@ import os
 import sys
 from pathlib import Path
 
-from telegram import Update, Bot
+from telegram import Update, Bot, ReplyKeyboardMarkup, KeyboardButton
 from telegram.error import TelegramError
 from typing import Set
 
@@ -78,6 +78,19 @@ bot = Bot(token=BOT_TOKEN)
 subscriber_manager = SubscriberManager()
 
 
+def get_main_keyboard() -> ReplyKeyboardMarkup:
+    """Create main keyboard with command buttons."""
+    keyboard = [
+        [KeyboardButton("📊 Статус")],
+        [KeyboardButton("✅ Подписаться"), KeyboardButton("❌ Отписаться")]
+    ]
+    return ReplyKeyboardMarkup(
+        keyboard,
+        resize_keyboard=True,
+        one_time_keyboard=False
+    )
+
+
 async def handle_start_command(chat_id: int, user_first_name: str) -> str:
     """
     Handle /start command.
@@ -91,21 +104,19 @@ async def handle_start_command(chat_id: int, user_first_name: str) -> str:
     """
     if subscriber_manager.add_subscriber(chat_id):
         return (
-            f"🎬 Welcome, {user_first_name}!\n\n"
-            "You're now subscribed to Meisengeige program updates.\n\n"
-            "You'll receive notifications when:\n"
-            "✨ New films are added\n"
-            "🔄 Film showtimes are updated\n"
-            "❌ Films are removed\n\n"
-            "Commands:\n"
-            "/stop - Unsubscribe from notifications\n"
-            "/status - Check your subscription status"
+            f"🎬 Добро пожаловать, {user_first_name}!\n\n"
+            "Вы подписались на обновления программы Meisengeige.\n\n"
+            "Вы будете получать уведомления когда:\n"
+            "✨ Добавляются новые фильмы\n"
+            "🔄 Обновляются сеансы\n"
+            "❌ Удаляются фильмы\n\n"
+            "Используйте кнопки ниже для управления подпиской."
         )
     else:
         return (
-            f"👋 Hi {user_first_name}!\n\n"
-            "You're already subscribed to notifications.\n\n"
-            "Use /status to check your subscription or /stop to unsubscribe."
+            f"👋 Привет, {user_first_name}!\n\n"
+            "Вы уже подписаны на уведомления.\n\n"
+            "Используйте кнопки ниже для управления подпиской."
         )
 
 
@@ -121,13 +132,13 @@ async def handle_stop_command(chat_id: int) -> str:
     """
     if subscriber_manager.remove_subscriber(chat_id):
         return (
-            "👋 You've been unsubscribed from Meisengeige notifications.\n\n"
-            "You can subscribe again anytime with /start"
+            "👋 Вы отписались от уведомлений Meisengeige.\n\n"
+            "Вы можете подписаться снова в любое время."
         )
     else:
         return (
-            "You're not currently subscribed.\n\n"
-            "Use /start to subscribe to notifications."
+            "Вы не подписаны на уведомления.\n\n"
+            "Используйте кнопку \"✅ Подписаться\" для подписки."
         )
 
 
@@ -149,23 +160,22 @@ async def handle_status_command(chat_id: int) -> str:
 
         if is_subscribed:
             return (
-                "✅ <b>Subscription Active</b>\n\n"
-                f"You're receiving Meisengeige program updates.\n"
-                f"Total subscribers: {total_subscribers}\n\n"
-                "Commands:\n"
-                "/stop - Unsubscribe"
+                "✅ <b>Подписка активна</b>\n\n"
+                f"Вы получаете обновления программы Meisengeige.\n"
+                f"Всего подписчиков: {total_subscribers}\n\n"
+                "Используйте кнопки ниже для управления подпиской."
             )
         else:
             return (
-                "❌ <b>Not Subscribed</b>\n\n"
-                "You're not receiving notifications.\n\n"
-                "Use /start to subscribe."
+                "❌ <b>Не подписаны</b>\n\n"
+                "Вы не получаете уведомления.\n\n"
+                "Используйте кнопку \"✅ Подписаться\" для подписки."
             )
     except Exception as e:
         print(f"[ERROR] Error in handle_status_command: {e}")
         import traceback
         traceback.print_exc()
-        return "Error checking status. Please try again."
+        return "Ошибка при проверке статуса. Попробуйте снова."
 
 
 async def process_update(update_data: dict) -> dict:
@@ -190,17 +200,17 @@ async def process_update(update_data: dict) -> dict:
 
         print(f"[DEBUG] Processing command: '{text}' from chat_id: {chat_id}")
 
-        # Route command
+        # Route command (support both slash commands and button text)
         response_text = None
         parse_mode = None
 
-        if text == '/start':
+        if text in ['/start', '✅ Подписаться']:
             print("[DEBUG] Routing to handle_start_command")
             response_text = await handle_start_command(chat_id, user_first_name)
-        elif text == '/stop':
+        elif text in ['/stop', '❌ Отписаться']:
             print("[DEBUG] Routing to handle_stop_command")
             response_text = await handle_stop_command(chat_id)
-        elif text == '/status':
+        elif text in ['/status', '📊 Статус']:
             print("[DEBUG] Routing to handle_status_command")
             response_text = await handle_status_command(chat_id)
             parse_mode = 'HTML'
@@ -209,10 +219,8 @@ async def process_update(update_data: dict) -> dict:
             # Unknown command
             print(f"[DEBUG] Unknown command: {text}")
             response_text = (
-                "Unknown command. Available commands:\n"
-                "/start - Subscribe to notifications\n"
-                "/stop - Unsubscribe\n"
-                "/status - Check subscription status"
+                "Неизвестная команда.\n\n"
+                "Используйте кнопки ниже для управления подпиской."
             )
 
         # Send response
@@ -221,7 +229,8 @@ async def process_update(update_data: dict) -> dict:
             await bot.send_message(
                 chat_id=chat_id,
                 text=response_text,
-                parse_mode=parse_mode
+                parse_mode=parse_mode,
+                reply_markup=get_main_keyboard()
             )
             print("[DEBUG] Message sent successfully")
 
