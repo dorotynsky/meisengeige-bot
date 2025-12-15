@@ -279,9 +279,18 @@ class handler(BaseHTTPRequestHandler):
                 )
                 return
 
-            # Process update
+            # Process update with proper event loop handling
             import asyncio
-            result = asyncio.run(process_update(data))
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_closed():
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+
+            result = loop.run_until_complete(process_update(data))
 
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
