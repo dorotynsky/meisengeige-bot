@@ -5,13 +5,68 @@ import os
 import sys
 from pathlib import Path
 
-# Add parent directory to path to import src modules
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
 from telegram import Update, Bot
 from telegram.error import TelegramError
+from typing import Set
 
-from src.subscribers import SubscriberManager
+
+# Inline SubscriberManager (copied from src/subscribers.py)
+class SubscriberManager:
+    """Manages the list of subscribers for notifications."""
+
+    def __init__(self, storage_file: str = "/tmp/subscribers.json"):
+        """Initialize subscriber manager with /tmp storage for Vercel."""
+        self.storage_file = Path(storage_file)
+        self.storage_file.parent.mkdir(exist_ok=True)
+        self._subscribers: Set[int] = self._load_subscribers()
+
+    def _load_subscribers(self) -> Set[int]:
+        """Load subscribers from storage file."""
+        if not self.storage_file.exists():
+            return set()
+        try:
+            with open(self.storage_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                return set(data.get('subscribers', []))
+        except (json.JSONDecodeError, OSError):
+            return set()
+
+    def _save_subscribers(self) -> None:
+        """Save subscribers to storage file."""
+        try:
+            with open(self.storage_file, 'w', encoding='utf-8') as f:
+                json.dump(
+                    {'subscribers': list(self._subscribers)},
+                    f,
+                    ensure_ascii=False,
+                    indent=2
+                )
+        except OSError:
+            pass
+
+    def add_subscriber(self, chat_id: int) -> bool:
+        """Add a new subscriber."""
+        if chat_id in self._subscribers:
+            return False
+        self._subscribers.add(chat_id)
+        self._save_subscribers()
+        return True
+
+    def remove_subscriber(self, chat_id: int) -> bool:
+        """Remove a subscriber."""
+        if chat_id not in self._subscribers:
+            return False
+        self._subscribers.remove(chat_id)
+        self._save_subscribers()
+        return True
+
+    def is_subscribed(self, chat_id: int) -> bool:
+        """Check if a chat ID is subscribed."""
+        return chat_id in self._subscribers
+
+    def get_subscriber_count(self) -> int:
+        """Get the number of subscribers."""
+        return len(self._subscribers)
 
 
 # Initialize bot and subscriber manager
