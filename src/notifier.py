@@ -1,11 +1,12 @@
 """Telegram notification handler."""
 
 import os
-from typing import List
+from typing import List, Set
 from telegram import Bot
 from telegram.error import TelegramError
 
 from .models import Film
+from .subscribers import SubscriberManager
 
 
 class TelegramNotifier:
@@ -17,17 +18,30 @@ class TelegramNotifier:
 
         Args:
             bot_token: Telegram bot token (from BotFather)
-            chat_id: Chat ID to send messages to
+            chat_id: Optional single chat ID (for backward compatibility)
         """
         self.bot_token = bot_token or os.getenv("TELEGRAM_BOT_TOKEN")
-        self.chat_id = chat_id or os.getenv("TELEGRAM_CHAT_ID")
 
         if not self.bot_token:
             raise ValueError("TELEGRAM_BOT_TOKEN not provided")
-        if not self.chat_id:
-            raise ValueError("TELEGRAM_CHAT_ID not provided")
 
         self.bot = Bot(token=self.bot_token)
+        self.subscriber_manager = SubscriberManager()
+
+        # For backward compatibility: if chat_id is provided, add it as subscriber
+        if chat_id:
+            try:
+                self.subscriber_manager.add_subscriber(int(chat_id))
+            except ValueError:
+                pass
+
+        # Also check environment variable
+        env_chat_id = os.getenv("TELEGRAM_CHAT_ID")
+        if env_chat_id:
+            try:
+                self.subscriber_manager.add_subscriber(int(env_chat_id))
+            except ValueError:
+                pass
 
     async def send_update_notification(
         self,
@@ -47,55 +61,71 @@ class TelegramNotifier:
             print("No changes detected, skipping notification")
             return
 
-        try:
-            # Send header message
-            header = self._format_header(new_films, removed_films, updated_films)
-            await self.bot.send_message(
-                chat_id=self.chat_id,
-                text=header,
-                parse_mode='HTML',
-            )
+        subscribers = self.subscriber_manager.get_all_subscribers()
 
-            # Send new films with photos
-            if new_films:
-                for film in new_films:
-                    await self._send_film_with_photo(film, "✨ New Film")
+        if not subscribers:
+            print("No subscribers, skipping notification")
+            return
 
-            # Send updated films with photos
-            if updated_films:
-                for film in updated_films:
-                    await self._send_film_with_photo(film, "🔄 Updated")
+        print(f"Sending notifications to {len(subscribers)} subscriber(s)...")
 
-            # Send removed films summary
-            if removed_films:
-                removed_text = "❌ <b>Removed Films:</b>\n"
-                for film in removed_films:
-                    removed_text += f"• {film.title}\n"
+        success_count = 0
+        error_count = 0
+
+        for chat_id in subscribers:
+            try:
+                # Send header message
+                header = self._format_header(new_films, removed_films, updated_films)
                 await self.bot.send_message(
-                    chat_id=self.chat_id,
-                    text=removed_text,
+                    chat_id=chat_id,
+                    text=header,
                     parse_mode='HTML',
                 )
 
-            print("Notification sent successfully")
-        except TelegramError as e:
-            print(f"Error sending Telegram notification: {e}")
-            raise
+                # Send new films with photos
+                if new_films:
+                    for film in new_films:
+                        await self._send_film_with_photo(film, "✨ New Film", chat_id)
 
-    async def _send_film_with_photo(self, film: Film, prefix: str) -> None:
+                # Send updated films with photos
+                if updated_films:
+                    for film in updated_films:
+                        await self._send_film_with_photo(film, "🔄 Updated", chat_id)
+
+                # Send removed films summary
+                if removed_films:
+                    removed_text = "❌ <b>Removed Films:</b>\n"
+                    for film in removed_films:
+                        removed_text += f"• {film.title}\n"
+                    await self.bot.send_message(
+                        chat_id=chat_id,
+                        text=removed_text,
+                        parse_mode='HTML',
+                    )
+
+                success_count += 1
+            except TelegramError as e:
+                error_count += 1
+                print(f"Error sending notification to {chat_id}: {e}")
+                # Continue with other subscribers
+
+        print(f"Notifications sent: {success_count} successful, {error_count} failed")
+
+    async def _send_film_with_photo(self, film: Film, prefix: str, chat_id: int) -> None:
         """
         Send a single film with poster image and details.
 
         Args:
             film: Film to send
             prefix: Label prefix (e.g., "✨ New Film", "🔄 Updated")
+            chat_id: Telegram chat ID to send to
         """
         caption = self._format_film_caption(film, prefix)
 
         if film.poster_url:
             try:
                 await self.bot.send_photo(
-                    chat_id=self.chat_id,
+                    chat_id=chat_id,
                     photo=film.poster_url,
                     caption=caption,
                     parse_mode='HTML',
@@ -104,14 +134,14 @@ class TelegramNotifier:
                 # If photo fails, send as text message
                 print(f"Failed to send photo for {film.title}: {e}")
                 await self.bot.send_message(
-                    chat_id=self.chat_id,
+                    chat_id=chat_id,
                     text=caption,
                     parse_mode='HTML',
                 )
         else:
             # No poster - send as text
             await self.bot.send_message(
-                chat_id=self.chat_id,
+                chat_id=chat_id,
                 text=caption,
                 parse_mode='HTML',
             )
