@@ -6,6 +6,7 @@ Create a script that runs via GitHub Actions to monitor updates to the Meisengei
 ## Current Status
 - Telegram bot has been created ✓
 - Development environment configured (Python 3.14.2) ✓
+- GitHub repository connected (https://github.com/dorotynsky/meisengeige-bot) ✓
 - **Current work:** Implementing monitoring functionality
 
 ## Chosen Approach
