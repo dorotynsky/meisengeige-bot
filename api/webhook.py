@@ -2,12 +2,39 @@
 
 import json
 import os
+import re
 import sys
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import List, Optional, Set
 
-from telegram import Update, Bot, BotCommand
+import httpx
+from bs4 import BeautifulSoup
+from telegram import Update, Bot, BotCommand, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.error import TelegramError
-from typing import Set
+
+
+# Data models for films
+@dataclass
+class Showtime:
+    """Represents a single film showtime."""
+    date: str
+    time: str
+    room: str
+    language: Optional[str] = None
+
+
+@dataclass
+class Film:
+    """Represents a film with all its information."""
+    title: str
+    genres: List[str] = field(default_factory=list)
+    fsk_rating: Optional[str] = None
+    duration: Optional[int] = None
+    description: Optional[str] = None
+    poster_url: Optional[str] = None
+    showtimes: List[Showtime] = field(default_factory=list)
+    film_id: Optional[str] = None
 
 
 # Inline SubscriberManager (copied from src/subscribers.py)
@@ -69,6 +96,158 @@ class SubscriberManager:
         return len(self._subscribers)
 
 
+# Film scraping functionality
+def fetch_current_films() -> List[Film]:
+    """
+    Fetch current films from Meisengeige website.
+
+    Returns:
+        List of Film objects
+    """
+    BASE_URL = "https://www.cinecitta.de/programm/meisengeige/"
+    TIMEOUT = 30.0
+
+    try:
+        with httpx.Client(timeout=TIMEOUT) as client:
+            response = client.get(BASE_URL)
+            response.raise_for_status()
+            html = response.text
+
+        soup = BeautifulSoup(html, 'html.parser')
+        film_containers = soup.find_all('li', class_='filmapi-container__list--li')
+
+        films = []
+        for container in film_containers:
+            film = _parse_single_film(container)
+            if film:
+                films.append(film)
+
+        return films
+    except Exception as e:
+        print(f"[ERROR] Failed to fetch films: {e}")
+        return []
+
+
+def _parse_single_film(container) -> Optional[Film]:
+    """Parse a single film from HTML container."""
+    try:
+        film_id = container.get('id', '').replace('film-', '') if container.get('id') else None
+
+        title_elem = container.find('h3', class_='text-white')
+        title = title_elem.text.strip() if title_elem else None
+        if not title:
+            return None
+
+        genre_elems = container.find_all('span', class_='px-2 bg-petrol-50')
+        genres = [genre.text.strip() for genre in genre_elems]
+
+        fsk_elem = container.find('span', class_=re.compile('age-rating--'))
+        fsk_rating = fsk_elem.text.strip() if fsk_elem else None
+
+        duration = None
+        duration_elem = container.find('i', class_='icon-clock')
+        if duration_elem and duration_elem.parent:
+            duration_text = duration_elem.parent.text.strip()
+            duration_match = re.search(r'(\d+)\s*min', duration_text)
+            if duration_match:
+                duration = int(duration_match.group(1))
+
+        desc_elem = container.find('p', class_='leading-tight')
+        description = desc_elem.text.strip() if desc_elem else None
+
+        poster_url = None
+        img_elem = container.find('img')
+        if img_elem and img_elem.get('src'):
+            poster_url = img_elem['src']
+            if not poster_url.startswith('http'):
+                poster_url = f"https://www.cinecitta.de{poster_url}"
+
+        showtimes = _parse_showtimes(container)
+
+        return Film(
+            title=title,
+            genres=genres,
+            fsk_rating=fsk_rating,
+            duration=duration,
+            description=description,
+            poster_url=poster_url,
+            film_id=film_id,
+            showtimes=showtimes,
+        )
+    except Exception as e:
+        print(f"[ERROR] Error parsing film: {e}")
+        return None
+
+
+def _parse_showtimes(container) -> List[Showtime]:
+    """Parse showtimes from film container."""
+    showtimes = []
+    showtime_section = container.find('div', class_='show_playing_times__content--inner')
+    if not showtime_section:
+        return showtimes
+
+    table = showtime_section.find('table', class_='film-list-table')
+    if not table:
+        return showtimes
+
+    dates = []
+    thead = table.find('thead')
+    if thead:
+        header_cells = thead.find_all('th')
+        for cell in header_cells[1:]:
+            date_text = cell.get_text(strip=True)
+            if date_text:
+                dates.append(date_text)
+
+    if not dates:
+        return showtimes
+
+    tbody = table.find('tbody')
+    if not tbody:
+        return showtimes
+
+    rows = tbody.find_all('tr')
+    for row in rows:
+        room_header = row.find('th')
+        if not room_header:
+            continue
+
+        room_div = room_header.find('div', class_='font-semibold')
+        room = room_div.get_text(strip=True) if room_div else "Unknown"
+
+        language = None
+        lang_div = room_header.find('div', class_='release-types')
+        if lang_div:
+            lang_span = lang_div.find('span')
+            if lang_span:
+                lang_text = lang_span.get_text(strip=True)
+                if lang_text:
+                    language = lang_text
+
+        time_cells = row.find_all('td')
+
+        for idx, cell in enumerate(time_cells):
+            if idx >= len(dates):
+                break
+
+            time_link = cell.find('a', class_='performance-link')
+            if time_link:
+                time_span = time_link.find('span', class_='link-text')
+                if time_span:
+                    time_text = time_span.get_text(strip=True)
+                    if time_text and re.match(r'\d{1,2}:\d{2}', time_text):
+                        showtimes.append(
+                            Showtime(
+                                date=dates[idx],
+                                time=time_text,
+                                room=room,
+                                language=language,
+                            )
+                        )
+
+    return showtimes
+
+
 # Initialize bot and subscriber manager
 BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN')
 if not BOT_TOKEN:
@@ -91,7 +270,8 @@ async def setup_bot_commands():
         commands = [
             BotCommand("start", "Подписаться на уведомления"),
             BotCommand("stop", "Отписаться от уведомлений"),
-            BotCommand("status", "Проверить статус подписки")
+            BotCommand("status", "Проверить статус подписки"),
+            BotCommand("films", "Показать текущую программу")
         ]
         await bot.set_my_commands(commands)
         _commands_initialized = True
@@ -210,6 +390,135 @@ async def handle_status_command(chat_id: int) -> str:
         return "Ошибка при проверке статуса. Попробуйте снова."
 
 
+async def handle_films_command(chat_id: int) -> None:
+    """
+    Handle /films command - show brief list of current films with inline buttons.
+
+    Args:
+        chat_id: User's chat ID
+    """
+    try:
+        print("[DEBUG] Fetching current films...")
+        films = fetch_current_films()
+
+        if not films:
+            await bot.send_message(
+                chat_id=chat_id,
+                text="❌ Не удалось загрузить список фильмов. Попробуйте позже."
+            )
+            return
+
+        # Send header message
+        header = f"🎬 <b>Текущая программа Meisengeige</b>\n\nВсего фильмов: {len(films)}\n\n"
+        header += "Нажмите на фильм чтобы увидеть детали:"
+
+        # Create inline keyboard with film buttons
+        keyboard = []
+        for film in films:
+            # Create button text with emoji
+            button_text = f"🎥 {film.title}"
+            # Use film_id or title as callback data
+            callback_data = f"film_{film.film_id}" if film.film_id else f"film_{films.index(film)}"
+            keyboard.append([InlineKeyboardButton(button_text, callback_data=callback_data)])
+
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await bot.send_message(
+            chat_id=chat_id,
+            text=header,
+            parse_mode='HTML',
+            reply_markup=reply_markup
+        )
+        print(f"[DEBUG] Sent films list with {len(films)} films")
+
+    except Exception as e:
+        print(f"[ERROR] Error in handle_films_command: {e}")
+        import traceback
+        traceback.print_exc()
+        await bot.send_message(
+            chat_id=chat_id,
+            text="Ошибка при загрузке списка фильмов. Попробуйте снова."
+        )
+
+
+async def handle_film_details_callback(chat_id: int, film_id: str) -> None:
+    """
+    Handle callback query for film details.
+
+    Args:
+        chat_id: User's chat ID
+        film_id: Film ID or index from callback data
+    """
+    try:
+        print(f"[DEBUG] Fetching details for film_id: {film_id}")
+        films = fetch_current_films()
+
+        # Find the requested film
+        film = None
+        for f in films:
+            if f.film_id == film_id or str(films.index(f)) == film_id:
+                film = f
+                break
+
+        if not film:
+            await bot.send_message(
+                chat_id=chat_id,
+                text="❌ Фильм не найден."
+            )
+            return
+
+        # Format film details
+        caption = f"🎬 <b>{film.title}</b>\n\n"
+
+        if film.genres:
+            caption += f"🎭 {', '.join(film.genres)}\n"
+        if film.fsk_rating:
+            caption += f"👤 {film.fsk_rating}\n"
+        if film.duration:
+            caption += f"⏱ {film.duration} мин\n"
+
+        caption += "\n"
+
+        if film.description:
+            caption += f"{film.description}\n\n"
+
+        if film.showtimes:
+            caption += "<b>Сеансы:</b>\n"
+            # Group showtimes by date
+            for showtime in film.showtimes[:10]:  # Limit to first 10 showtimes
+                lang_info = f" ({showtime.language})" if showtime.language else ""
+                caption += f"• {showtime.date} {showtime.time} - {showtime.room}{lang_info}\n"
+
+            if len(film.showtimes) > 10:
+                caption += f"\n... и еще {len(film.showtimes) - 10} сеансов"
+
+        # Send photo with details
+        if film.poster_url:
+            await bot.send_photo(
+                chat_id=chat_id,
+                photo=film.poster_url,
+                caption=caption,
+                parse_mode='HTML'
+            )
+        else:
+            await bot.send_message(
+                chat_id=chat_id,
+                text=caption,
+                parse_mode='HTML'
+            )
+
+        print(f"[DEBUG] Sent details for film: {film.title}")
+
+    except Exception as e:
+        print(f"[ERROR] Error in handle_film_details_callback: {e}")
+        import traceback
+        traceback.print_exc()
+        await bot.send_message(
+            chat_id=chat_id,
+            text="Ошибка при загрузке деталей фильма. Попробуйте снова."
+        )
+
+
 async def process_update(update_data: dict) -> dict:
     """
     Process incoming Telegram update.
@@ -226,6 +535,25 @@ async def process_update(update_data: dict) -> dict:
 
         update = Update.de_json(update_data, bot)
 
+        # Handle callback queries (inline button clicks)
+        if update.callback_query:
+            query = update.callback_query
+            chat_id = query.message.chat.id
+            callback_data = query.data
+
+            print(f"[DEBUG] Processing callback query: '{callback_data}' from chat_id: {chat_id}")
+
+            # Answer callback query to remove loading state
+            await bot.answer_callback_query(query.id)
+
+            # Handle film details callback
+            if callback_data.startswith('film_'):
+                film_id = callback_data.replace('film_', '')
+                await handle_film_details_callback(chat_id, film_id)
+
+            return {'status': 'success', 'type': 'callback_query'}
+
+        # Handle text messages
         if not update.message or not update.message.text:
             return {'status': 'ignored', 'reason': 'no text message'}
 
@@ -250,6 +578,10 @@ async def process_update(update_data: dict) -> dict:
             response_text = await handle_status_command(chat_id)
             parse_mode = 'HTML'
             print(f"[DEBUG] Response text: {response_text[:50]}...")
+        elif text == '/films':
+            print("[DEBUG] Routing to handle_films_command")
+            await handle_films_command(chat_id)
+            return {'status': 'success', 'command': text}
         else:
             # Unknown command
             print(f"[DEBUG] Unknown command: {text}")
@@ -259,7 +591,7 @@ async def process_update(update_data: dict) -> dict:
             )
 
         # Send response (only if response_text is not None)
-        # Some handlers (like first-time /start) send their own messages and return None
+        # Some handlers (like first-time /start or /films) send their own messages and return None
         if response_text:
             print(f"[DEBUG] Sending response with parse_mode={parse_mode}")
             await bot.send_message(
