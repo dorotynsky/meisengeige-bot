@@ -166,67 +166,55 @@ async def process_update(update_data: dict) -> dict:
 
 
 # Vercel serverless function handler
-def handler(request):
-    """
-    Main handler for Vercel serverless function.
+from http.server import BaseHTTPRequestHandler
 
-    Args:
-        request: Vercel request object
 
-    Returns:
-        Response tuple (body, status_code, headers)
-    """
-    # Handle health check
-    if request.method == 'GET':
-        return (
-            json.dumps({'status': 'healthy', 'bot': 'meisengeige'}),
-            200,
-            {'Content-Type': 'application/json'}
+class handler(BaseHTTPRequestHandler):
+    """Main handler for Vercel serverless function."""
+
+    def do_GET(self):
+        """Handle GET requests (health check)."""
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/json')
+        self.end_headers()
+        self.wfile.write(
+            json.dumps({'status': 'healthy', 'bot': 'meisengeige'}).encode()
         )
 
-    # Handle webhook POST
-    if request.method == 'POST':
+    def do_POST(self):
+        """Handle POST requests (webhook)."""
         try:
-            # Get JSON data
-            if hasattr(request, 'get_json'):
-                data = request.get_json()
-            elif hasattr(request, 'json'):
-                data = request.json
-            else:
-                # Try to parse body
-                import json as json_lib
-                data = json_lib.loads(request.body)
+            # Read body
+            content_length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(content_length)
+            data = json.loads(body.decode('utf-8'))
 
             if not data:
-                return (
-                    json.dumps({'status': 'error', 'message': 'No data'}),
-                    400,
-                    {'Content-Type': 'application/json'}
+                self.send_response(400)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(
+                    json.dumps({'status': 'error', 'message': 'No data'}).encode()
                 )
+                return
 
-            # Process update (synchronously wrap async)
+            # Process update
             import asyncio
             result = asyncio.run(process_update(data))
 
-            return (
-                json.dumps(result),
-                200,
-                {'Content-Type': 'application/json'}
-            )
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps(result).encode())
 
         except Exception as e:
             print(f"Handler error: {e}")
             import traceback
             traceback.print_exc()
-            return (
-                json.dumps({'status': 'error', 'message': str(e)}),
-                500,
-                {'Content-Type': 'application/json'}
-            )
 
-    # Method not allowed
-    return (
-        json.dumps({'status': 'error', 'message': 'Method not allowed'}),
-        405,
-        {'Content-Type': 'application/json'}
-    )
+            self.send_response(500)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(
+                json.dumps({'status': 'error', 'message': str(e)}).encode()
+            )
