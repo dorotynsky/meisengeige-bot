@@ -100,18 +100,42 @@ async def handle_start_command(chat_id: int, user_first_name: str) -> str:
         user_first_name: User's first name
 
     Returns:
-        Message to send
+        Message to send (or None if photo was sent)
     """
     if subscriber_manager.add_subscriber(chat_id):
-        return (
-            f"🎬 Добро пожаловать, {user_first_name}!\n\n"
-            "Вы подписались на обновления программы Meisengeige.\n\n"
-            "Вы будете получать уведомления когда:\n"
-            "✨ Добавляются новые фильмы\n"
-            "🔄 Обновляются сеансы\n"
-            "❌ Удаляются фильмы\n\n"
+        # First time user - send welcome photo with description
+        welcome_image_url = "https://www.cinecitta.de/fileadmin/Seitenbanner/Seitenbanner_Meisengeige.jpg.pagespeed.ce.MUHRnnz-ET.jpg"
+        caption = (
+            f"🎬 <b>Добро пожаловать, {user_first_name}!</b>\n\n"
+            "Этот бот следит за программой <b>Meisengeige</b> в кинотеатре CineCitta Nürnberg "
+            "и присылает уведомления об изменениях:\n\n"
+            "✨ <b>Новые фильмы</b> в программе\n"
+            "🔄 <b>Изменения сеансов</b> показа\n"
+            "❌ <b>Удаление</b> фильмов из программы\n\n"
             "Используйте кнопки ниже для управления подпиской."
         )
+
+        try:
+            await bot.send_photo(
+                chat_id=chat_id,
+                photo=welcome_image_url,
+                caption=caption,
+                parse_mode='HTML',
+                reply_markup=get_main_keyboard()
+            )
+            return None  # Photo already sent, don't send text message
+        except Exception as e:
+            print(f"[ERROR] Failed to send welcome photo: {e}")
+            # Fallback to text message if photo fails
+            return (
+                f"🎬 Добро пожаловать, {user_first_name}!\n\n"
+                "Вы подписались на обновления программы Meisengeige.\n\n"
+                "Вы будете получать уведомления когда:\n"
+                "✨ Добавляются новые фильмы\n"
+                "🔄 Обновляются сеансы\n"
+                "❌ Удаляются фильмы\n\n"
+                "Используйте кнопки ниже для управления подпиской."
+            )
     else:
         return (
             f"👋 Привет, {user_first_name}!\n\n"
@@ -223,9 +247,10 @@ async def process_update(update_data: dict) -> dict:
                 "Используйте кнопки ниже для управления подпиской."
             )
 
-        # Send response
-        print(f"[DEBUG] Sending response with parse_mode={parse_mode}")
+        # Send response (only if response_text is not None)
+        # Some handlers (like first-time /start) send their own messages and return None
         if response_text:
+            print(f"[DEBUG] Sending response with parse_mode={parse_mode}")
             await bot.send_message(
                 chat_id=chat_id,
                 text=response_text,
@@ -233,6 +258,8 @@ async def process_update(update_data: dict) -> dict:
                 reply_markup=get_main_keyboard()
             )
             print("[DEBUG] Message sent successfully")
+        else:
+            print("[DEBUG] Response already sent by handler")
 
         return {'status': 'success', 'command': text}
 
