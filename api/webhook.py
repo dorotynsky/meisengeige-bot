@@ -424,6 +424,7 @@ async def setup_bot_commands(bot: Bot):
     try:
         commands = [
             BotCommand("films", "🎥 Показать текущую программу"),
+            BotCommand("language", "🌍 Выбрать язык / Change language"),
             BotCommand("start", "✨ Подписаться на уведомления"),
             BotCommand("status", "📊 Проверить статус подписки"),
             BotCommand("stop", "❌ Отписаться от уведомлений")
@@ -553,6 +554,29 @@ async def handle_status_command(bot: Bot, chat_id: int) -> str:
         import traceback
         traceback.print_exc()
         return get_text(chat_id, 'unknown_command')
+
+
+async def handle_language_command(bot: Bot, chat_id: int) -> None:
+    """
+    Handle /language command - show language selection.
+
+    Args:
+        bot: Bot instance
+        chat_id: User's chat ID
+    """
+    # Show language selection buttons
+    keyboard = [
+        [InlineKeyboardButton("🇷🇺 Русский", callback_data="changelang_ru")],
+        [InlineKeyboardButton("🇩🇪 Deutsch", callback_data="changelang_de")],
+        [InlineKeyboardButton("🇬🇧 English", callback_data="changelang_en")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await bot.send_message(
+        chat_id=chat_id,
+        text="🌍 Выберите язык / Choose language / Sprache wählen",
+        reply_markup=reply_markup
+    )
 
 
 async def handle_films_command(bot: Bot, chat_id: int) -> None:
@@ -740,6 +764,17 @@ async def process_update(update_data: dict) -> dict:
                 user_first_name = user.first_name or "there"
                 await send_welcome_message(bot, chat_id, user_first_name)
 
+            elif callback_data.startswith('changelang_'):
+                # Language change (from /language command)
+                lang = callback_data.replace('changelang_', '')
+                language_manager.set_language(chat_id, lang)
+
+                # Send confirmation message in the newly selected language
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text=get_text(chat_id, 'language_set')
+                )
+
             elif callback_data.startswith('film_'):
                 # Show film details
                 film_id = callback_data.replace('film_', '')
@@ -775,6 +810,10 @@ async def process_update(update_data: dict) -> dict:
             response_text = await handle_status_command(bot, chat_id)
             parse_mode = 'HTML'
             print(f"[DEBUG] Response text: {response_text[:50]}...")
+        elif text == '/language':
+            print("[DEBUG] Routing to handle_language_command")
+            await handle_language_command(bot, chat_id)
+            return {'status': 'success', 'command': text}
         elif text == '/films':
             print("[DEBUG] Routing to handle_films_command")
             await handle_films_command(bot, chat_id)
