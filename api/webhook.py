@@ -97,6 +97,133 @@ class SubscriberManager:
         return len(self._subscribers)
 
 
+# Language Manager for user language preferences
+class LanguageManager:
+    """Manages user language preferences."""
+
+    def __init__(self, storage_file: str = "/tmp/languages.json"):
+        """Initialize language manager with /tmp storage for Vercel."""
+        self.storage_file = Path(storage_file)
+        self.storage_file.parent.mkdir(exist_ok=True)
+        self._languages: dict = self._load_languages()
+
+    def _load_languages(self) -> dict:
+        """Load language preferences from storage file."""
+        if not self.storage_file.exists():
+            return {}
+        try:
+            with open(self.storage_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                return data.get('languages', {})
+        except (json.JSONDecodeError, OSError):
+            return {}
+
+    def _save_languages(self) -> None:
+        """Save language preferences to storage file."""
+        try:
+            with open(self.storage_file, 'w', encoding='utf-8') as f:
+                json.dump(
+                    {'languages': self._languages},
+                    f,
+                    ensure_ascii=False,
+                    indent=2
+                )
+        except OSError:
+            pass
+
+    def set_language(self, chat_id: int, language: str) -> None:
+        """Set language preference for a user."""
+        self._languages[str(chat_id)] = language
+        self._save_languages()
+
+    def get_language(self, chat_id: int) -> str:
+        """Get language preference for a user (default: ru)."""
+        return self._languages.get(str(chat_id), 'ru')
+
+
+# Translations dictionary
+TRANSLATIONS = {
+    'ru': {
+        'choose_language': '🌍 Выберите язык',
+        'language_set': '✅ Язык установлен: Русский',
+        'welcome_title': '🎬 <b>Добро пожаловать, {name}!</b>',
+        'welcome_desc': 'Этот бот следит за программой кинотеатра <b>Meisengeige</b> Nürnberg.',
+        'capabilities': '<b>Возможности:</b>',
+        'capability_view': '🎥 Просмотр текущей программы',
+        'capability_new': '✨ Уведомления о новых фильмах',
+        'capability_updates': '🔄 Уведомления об изменениях сеансов',
+        'capability_removed': '❌ Уведомления об удалении фильмов',
+        'use_menu': 'Используйте меню команд (☰) для управления подпиской.',
+        'already_subscribed': '👋 Привет, {name}!\n\nВы уже подписаны на уведомления.\n\nИспользуйте меню команд (☰) для управления подпиской.',
+        'unsubscribed': '👋 Вы отписались от уведомлений Meisengeige.\n\nВы можете подписаться снова в любое время используя команду /start.',
+        'not_subscribed': 'Вы не подписаны на уведомления.\n\nИспользуйте команду /start для подписки.',
+        'status_active': '✅ <b>Подписка активна</b>\n\nВы получаете обновления программы Meisengeige.\nВсего подписчиков: {count}\n\nИспользуйте меню команд (☰) для управления подпиской.',
+        'status_inactive': '❌ <b>Не подписаны</b>\n\nВы не получаете уведомления.\n\nИспользуйте команду /start для подписки.',
+        'films_title': '🎬 <b>Текущая программа Meisengeige</b>\n\nВсего фильмов: {count}\n\nНажмите на фильм чтобы увидеть детали:',
+        'films_error': '❌ Не удалось загрузить список фильмов. Попробуйте позже.',
+        'film_not_found': '❌ Фильм не найден.',
+        'showtimes': '<b>Сеансы:</b>',
+        'back_to_list': '◀️ Вернуться к списку',
+        'unknown_command': 'Неизвестная команда.\n\nИспользуйте меню команд (☰) для управления подпиской.',
+    },
+    'de': {
+        'choose_language': '🌍 Sprache wählen',
+        'language_set': '✅ Sprache eingestellt: Deutsch',
+        'welcome_title': '🎬 <b>Willkommen, {name}!</b>',
+        'welcome_desc': 'Dieser Bot überwacht das Programm des Kinos <b>Meisengeige</b> Nürnberg.',
+        'capabilities': '<b>Funktionen:</b>',
+        'capability_view': '🎥 Aktuelles Programm anzeigen',
+        'capability_new': '✨ Benachrichtigungen über neue Filme',
+        'capability_updates': '🔄 Benachrichtigungen über Vorstellungsänderungen',
+        'capability_removed': '❌ Benachrichtigungen über entfernte Filme',
+        'use_menu': 'Verwenden Sie das Befehlsmenü (☰) zur Verwaltung des Abonnements.',
+        'already_subscribed': '👋 Hallo {name}!\n\nSie sind bereits für Benachrichtigungen angemeldet.\n\nVerwenden Sie das Befehlsmenü (☰) zur Verwaltung.',
+        'unsubscribed': '👋 Sie haben sich von Meisengeige-Benachrichtigungen abgemeldet.\n\nSie können sich jederzeit mit /start wieder anmelden.',
+        'not_subscribed': 'Sie sind nicht für Benachrichtigungen angemeldet.\n\nVerwenden Sie /start zum Abonnieren.',
+        'status_active': '✅ <b>Abonnement aktiv</b>\n\nSie erhalten Meisengeige-Programmupdates.\nGesamtabonnenten: {count}\n\nVerwenden Sie das Befehlsmenü (☰) zur Verwaltung.',
+        'status_inactive': '❌ <b>Nicht abonniert</b>\n\nSie erhalten keine Benachrichtigungen.\n\nVerwenden Sie /start zum Abonnieren.',
+        'films_title': '🎬 <b>Aktuelles Meisengeige-Programm</b>\n\nFilme insgesamt: {count}\n\nKlicken Sie auf einen Film für Details:',
+        'films_error': '❌ Filmliste konnte nicht geladen werden. Bitte später versuchen.',
+        'film_not_found': '❌ Film nicht gefunden.',
+        'showtimes': '<b>Vorstellungen:</b>',
+        'back_to_list': '◀️ Zurück zur Liste',
+        'unknown_command': 'Unbekannter Befehl.\n\nVerwenden Sie das Befehlsmenü (☰) zur Verwaltung.',
+    },
+    'en': {
+        'choose_language': '🌍 Choose language',
+        'language_set': '✅ Language set: English',
+        'welcome_title': '🎬 <b>Welcome, {name}!</b>',
+        'welcome_desc': 'This bot monitors the program of <b>Meisengeige</b> cinema in Nuremberg.',
+        'capabilities': '<b>Features:</b>',
+        'capability_view': '🎥 View current program',
+        'capability_new': '✨ Notifications about new films',
+        'capability_updates': '🔄 Notifications about showtime changes',
+        'capability_removed': '❌ Notifications about removed films',
+        'use_menu': 'Use the command menu (☰) to manage your subscription.',
+        'already_subscribed': '👋 Hi {name}!\n\nYou are already subscribed to notifications.\n\nUse the command menu (☰) to manage your subscription.',
+        'unsubscribed': '👋 You have unsubscribed from Meisengeige notifications.\n\nYou can subscribe again anytime using /start.',
+        'not_subscribed': 'You are not subscribed to notifications.\n\nUse /start to subscribe.',
+        'status_active': '✅ <b>Subscription Active</b>\n\nYou are receiving Meisengeige program updates.\nTotal subscribers: {count}\n\nUse the command menu (☰) to manage your subscription.',
+        'status_inactive': '❌ <b>Not Subscribed</b>\n\nYou are not receiving notifications.\n\nUse /start to subscribe.',
+        'films_title': '🎬 <b>Current Meisengeige Program</b>\n\nTotal films: {count}\n\nClick on a film to see details:',
+        'films_error': '❌ Failed to load film list. Please try later.',
+        'film_not_found': '❌ Film not found.',
+        'showtimes': '<b>Showtimes:</b>',
+        'back_to_list': '◀️ Back to list',
+        'unknown_command': 'Unknown command.\n\nUse the command menu (☰) to manage your subscription.',
+    }
+}
+
+
+def get_text(chat_id: int, key: str, **kwargs) -> str:
+    """Get translated text for a user."""
+    lang = language_manager.get_language(chat_id)
+    text = TRANSLATIONS.get(lang, TRANSLATIONS['ru']).get(key, key)
+    if kwargs:
+        text = text.format(**kwargs)
+    return text
+
+
 # Cache for film data
 _films_cache: Optional[List[Film]] = None
 _films_cache_time: Optional[float] = None
@@ -282,6 +409,7 @@ if not BOT_TOKEN:
     raise ValueError("TELEGRAM_BOT_TOKEN environment variable not set")
 
 subscriber_manager = SubscriberManager()
+language_manager = LanguageManager()
 
 # Track if bot commands have been set up
 _commands_initialized = False
@@ -309,7 +437,7 @@ async def setup_bot_commands(bot: Bot):
 
 async def handle_start_command(bot: Bot, chat_id: int, user_first_name: str) -> str:
     """
-    Handle /start command.
+    Handle /start command with language selection.
 
     Args:
         chat_id: User's chat ID
@@ -318,46 +446,67 @@ async def handle_start_command(bot: Bot, chat_id: int, user_first_name: str) -> 
     Returns:
         Message to send (or None if photo was sent)
     """
-    if subscriber_manager.add_subscriber(chat_id):
-        # First time user - send welcome photo with description
-        welcome_image_url = "https://www.cinecitta.de/fileadmin/Seitenbanner/Seitenbanner_Meisengeige.jpg.pagespeed.ce.MUHRnnz-ET.jpg"
-        caption = (
-            f"🎬 <b>Добро пожаловать, {user_first_name}!</b>\n\n"
-            "Этот бот следит за программой кинотеатра <b>Meisengeige</b> Nürnberg.\n\n"
-            "<b>Возможности:</b>\n"
-            "🎥 Просмотр текущей программы\n"
-            "✨ Уведомления о новых фильмах\n"
-            "🔄 Уведомления об изменениях сеансов\n"
-            "❌ Уведомления об удалении фильмов\n\n"
-            "Используйте меню команд (☰) для управления подпиской."
-        )
+    # Check if user has language preference
+    current_lang = language_manager.get_language(chat_id)
 
-        try:
-            await bot.send_photo(
-                chat_id=chat_id,
-                photo=welcome_image_url,
-                caption=caption,
-                parse_mode='HTML'
-            )
-            return None  # Photo already sent, don't send text message
-        except Exception as e:
-            print(f"[ERROR] Failed to send welcome photo: {e}")
-            # Fallback to text message if photo fails
-            return (
-                f"🎬 Добро пожаловать, {user_first_name}!\n\n"
-                "Вы подписались на обновления программы Meisengeige.\n\n"
-                "Возможности:\n"
-                "🎥 Просмотр текущей программы\n"
-                "✨ Уведомления о новых фильмах\n"
-                "🔄 Уведомления об изменениях сеансов\n"
-                "❌ Уведомления об удалении фильмов\n\n"
-                "Используйте меню команд (☰) для управления подпиской."
-            )
+    # If this is truly first time (no language set and not subscribed), show language selection
+    if current_lang == 'ru' and str(chat_id) not in language_manager._languages and not subscriber_manager.is_subscribed(chat_id):
+        # Show language selection buttons
+        keyboard = [
+            [InlineKeyboardButton("🇷🇺 Русский", callback_data="lang_ru")],
+            [InlineKeyboardButton("🇩🇪 Deutsch", callback_data="lang_de")],
+            [InlineKeyboardButton("🇬🇧 English", callback_data="lang_en")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await bot.send_message(
+            chat_id=chat_id,
+            text="🌍 Выберите язык / Choose language / Sprache wählen",
+            reply_markup=reply_markup
+        )
+        return None
+
+    # User has language preference or is returning - proceed with subscription
+    is_new_subscriber = subscriber_manager.add_subscriber(chat_id)
+
+    if is_new_subscriber:
+        # First time subscriber - send welcome photo
+        await send_welcome_message(bot, chat_id, user_first_name)
+        return None
     else:
-        return (
-            f"👋 Привет, {user_first_name}!\n\n"
-            "Вы уже подписаны на уведомления.\n\n"
-            "Используйте меню команд (☰) для управления подпиской."
+        # Already subscribed
+        return get_text(chat_id, 'already_subscribed', name=user_first_name)
+
+
+async def send_welcome_message(bot: Bot, chat_id: int, user_first_name: str):
+    """Send welcome message with photo in user's language."""
+    welcome_image_url = "https://www.cinecitta.de/fileadmin/Seitenbanner/Seitenbanner_Meisengeige.jpg.pagespeed.ce.MUHRnnz-ET.jpg"
+
+    caption = (
+        f"{get_text(chat_id, 'welcome_title', name=user_first_name)}\n\n"
+        f"{get_text(chat_id, 'welcome_desc')}\n\n"
+        f"{get_text(chat_id, 'capabilities')}\n"
+        f"{get_text(chat_id, 'capability_view')}\n"
+        f"{get_text(chat_id, 'capability_new')}\n"
+        f"{get_text(chat_id, 'capability_updates')}\n"
+        f"{get_text(chat_id, 'capability_removed')}\n\n"
+        f"{get_text(chat_id, 'use_menu')}"
+    )
+
+    try:
+        await bot.send_photo(
+            chat_id=chat_id,
+            photo=welcome_image_url,
+            caption=caption,
+            parse_mode='HTML'
+        )
+    except Exception as e:
+        print(f"[ERROR] Failed to send welcome photo: {e}")
+        # Fallback to text message if photo fails
+        await bot.send_message(
+            chat_id=chat_id,
+            text=caption,
+            parse_mode='HTML'
         )
 
 
@@ -366,21 +515,16 @@ async def handle_stop_command(bot: Bot, chat_id: int) -> str:
     Handle /stop command.
 
     Args:
+        bot: Bot instance
         chat_id: User's chat ID
 
     Returns:
         Message to send
     """
     if subscriber_manager.remove_subscriber(chat_id):
-        return (
-            "👋 Вы отписались от уведомлений Meisengeige.\n\n"
-            "Вы можете подписаться снова в любое время используя команду /start."
-        )
+        return get_text(chat_id, 'unsubscribed')
     else:
-        return (
-            "Вы не подписаны на уведомления.\n\n"
-            "Используйте команду /start для подписки."
-        )
+        return get_text(chat_id, 'not_subscribed')
 
 
 async def handle_status_command(bot: Bot, chat_id: int) -> str:
@@ -388,6 +532,7 @@ async def handle_status_command(bot: Bot, chat_id: int) -> str:
     Handle /status command.
 
     Args:
+        bot: Bot instance
         chat_id: User's chat ID
 
     Returns:
@@ -400,23 +545,14 @@ async def handle_status_command(bot: Bot, chat_id: int) -> str:
         print(f"[DEBUG] is_subscribed={is_subscribed}, total_subscribers={total_subscribers}")
 
         if is_subscribed:
-            return (
-                "✅ <b>Подписка активна</b>\n\n"
-                f"Вы получаете обновления программы Meisengeige.\n"
-                f"Всего подписчиков: {total_subscribers}\n\n"
-                "Используйте меню команд (☰) для управления подпиской."
-            )
+            return get_text(chat_id, 'status_active', count=total_subscribers)
         else:
-            return (
-                "❌ <b>Не подписаны</b>\n\n"
-                "Вы не получаете уведомления.\n\n"
-                "Используйте команду /start для подписки."
-            )
+            return get_text(chat_id, 'status_inactive')
     except Exception as e:
         print(f"[ERROR] Error in handle_status_command: {e}")
         import traceback
         traceback.print_exc()
-        return "Ошибка при проверке статуса. Попробуйте снова."
+        return get_text(chat_id, 'unknown_command')
 
 
 async def handle_films_command(bot: Bot, chat_id: int) -> None:
@@ -424,6 +560,7 @@ async def handle_films_command(bot: Bot, chat_id: int) -> None:
     Handle /films command - show brief list of current films with inline buttons.
 
     Args:
+        bot: Bot instance
         chat_id: User's chat ID
     """
     try:
@@ -433,13 +570,12 @@ async def handle_films_command(bot: Bot, chat_id: int) -> None:
         if not films:
             await bot.send_message(
                 chat_id=chat_id,
-                text="❌ Не удалось загрузить список фильмов. Попробуйте позже."
+                text=get_text(chat_id, 'films_error')
             )
             return
 
-        # Send header message
-        header = f"🎬 <b>Текущая программа Meisengeige</b>\n\nВсего фильмов: {len(films)}\n\n"
-        header += "Нажмите на фильм чтобы увидеть детали:"
+        # Send header message in user's language
+        header = get_text(chat_id, 'films_title', count=len(films))
 
         # Create inline keyboard with film buttons
         keyboard = []
@@ -466,7 +602,7 @@ async def handle_films_command(bot: Bot, chat_id: int) -> None:
         traceback.print_exc()
         await bot.send_message(
             chat_id=chat_id,
-            text="Ошибка при загрузке списка фильмов. Попробуйте снова."
+            text=get_text(chat_id, 'films_error')
         )
 
 
@@ -475,6 +611,7 @@ async def handle_film_details_callback(bot: Bot, chat_id: int, film_id: str) -> 
     Handle callback query for film details.
 
     Args:
+        bot: Bot instance
         chat_id: User's chat ID
         film_id: Film ID or index from callback data
     """
@@ -492,7 +629,7 @@ async def handle_film_details_callback(bot: Bot, chat_id: int, film_id: str) -> 
         if not film:
             await bot.send_message(
                 chat_id=chat_id,
-                text="❌ Фильм не найден."
+                text=get_text(chat_id, 'film_not_found')
             )
             return
 
@@ -512,7 +649,7 @@ async def handle_film_details_callback(bot: Bot, chat_id: int, film_id: str) -> 
             caption += f"{film.description}\n\n"
 
         if film.showtimes:
-            caption += "<b>Сеансы:</b>\n"
+            caption += f"{get_text(chat_id, 'showtimes')}\n"
             # Group showtimes by date
             for showtime in film.showtimes[:10]:  # Limit to first 10 showtimes
                 lang_info = f" ({showtime.language})" if showtime.language else ""
@@ -521,8 +658,9 @@ async def handle_film_details_callback(bot: Bot, chat_id: int, film_id: str) -> 
             if len(film.showtimes) > 10:
                 caption += f"\n... и еще {len(film.showtimes) - 10} сеансов"
 
-        # Create back button
-        keyboard = [[InlineKeyboardButton("◀️ Вернуться к списку", callback_data="back_to_list")]]
+        # Create back button with translation
+        back_button_text = get_text(chat_id, 'back_to_list')
+        keyboard = [[InlineKeyboardButton(back_button_text, callback_data="back_to_list")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
         # Send photo with details
@@ -585,7 +723,24 @@ async def process_update(update_data: dict) -> dict:
             await bot.answer_callback_query(query.id)
 
             # Handle callbacks
-            if callback_data.startswith('film_'):
+            if callback_data.startswith('lang_'):
+                # Language selection
+                lang = callback_data.replace('lang_', '')
+                language_manager.set_language(chat_id, lang)
+
+                # Send confirmation message
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text=get_text(chat_id, 'language_set')
+                )
+
+                # Subscribe user and send welcome message
+                subscriber_manager.add_subscriber(chat_id)
+                user = query.from_user
+                user_first_name = user.first_name or "there"
+                await send_welcome_message(bot, chat_id, user_first_name)
+
+            elif callback_data.startswith('film_'):
                 # Show film details
                 film_id = callback_data.replace('film_', '')
                 await handle_film_details_callback(bot, chat_id, film_id)
@@ -627,10 +782,7 @@ async def process_update(update_data: dict) -> dict:
         else:
             # Unknown command
             print(f"[DEBUG] Unknown command: {text}")
-            response_text = (
-                "Неизвестная команда.\n\n"
-                "Используйте меню команд (☰) для управления подпиской."
-            )
+            response_text = get_text(chat_id, 'unknown_command')
 
         # Send response (only if response_text is not None)
         # Some handlers (like first-time /start or /films) send their own messages and return None
