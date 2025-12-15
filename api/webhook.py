@@ -494,19 +494,25 @@ async def handle_film_details_callback(chat_id: int, film_id: str) -> None:
             if len(film.showtimes) > 10:
                 caption += f"\n... и еще {len(film.showtimes) - 10} сеансов"
 
+        # Create back button
+        keyboard = [[InlineKeyboardButton("◀️ Вернуться к списку", callback_data="back_to_list")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
         # Send photo with details
         if film.poster_url:
             await bot.send_photo(
                 chat_id=chat_id,
                 photo=film.poster_url,
                 caption=caption,
-                parse_mode='HTML'
+                parse_mode='HTML',
+                reply_markup=reply_markup
             )
         else:
             await bot.send_message(
                 chat_id=chat_id,
                 text=caption,
-                parse_mode='HTML'
+                parse_mode='HTML',
+                reply_markup=reply_markup
             )
 
         print(f"[DEBUG] Sent details for film: {film.title}")
@@ -548,10 +554,14 @@ async def process_update(update_data: dict) -> dict:
             # Answer callback query to remove loading state
             await bot.answer_callback_query(query.id)
 
-            # Handle film details callback
+            # Handle callbacks
             if callback_data.startswith('film_'):
+                # Show film details
                 film_id = callback_data.replace('film_', '')
                 await handle_film_details_callback(chat_id, film_id)
+            elif callback_data == 'back_to_list':
+                # Return to films list
+                await handle_films_command(chat_id)
 
             return {'status': 'success', 'type': 'callback_query'}
 
