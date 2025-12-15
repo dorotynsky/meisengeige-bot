@@ -11,6 +11,7 @@ from typing import List, Optional, Set
 
 import httpx
 from bs4 import BeautifulSoup
+from pymongo import MongoClient
 from telegram import Update, Bot, BotCommand, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.error import TelegramError
 
@@ -38,107 +39,82 @@ class Film:
     film_id: Optional[str] = None
 
 
-# Inline SubscriberManager (copied from src/subscribers.py)
+# MongoDB connection helper
+def get_mongodb_database():
+    """Get MongoDB database instance."""
+    mongodb_uri = os.getenv('MONGODB_URI')
+    if not mongodb_uri:
+        raise ValueError("MONGODB_URI environment variable not set")
+
+    client = MongoClient(mongodb_uri)
+    return client['meisengeige_bot']
+
+
+# Inline SubscriberManager (MongoDB version)
 class SubscriberManager:
-    """Manages the list of subscribers for notifications."""
+    """Manages the list of subscribers for notifications using MongoDB."""
 
-    def __init__(self, storage_file: str = "/tmp/subscribers.json"):
-        """Initialize subscriber manager with /tmp storage for Vercel."""
-        self.storage_file = Path(storage_file)
-        self.storage_file.parent.mkdir(exist_ok=True)
-        self._subscribers: Set[int] = self._load_subscribers()
-
-    def _load_subscribers(self) -> Set[int]:
-        """Load subscribers from storage file."""
-        if not self.storage_file.exists():
-            return set()
-        try:
-            with open(self.storage_file, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                return set(data.get('subscribers', []))
-        except (json.JSONDecodeError, OSError):
-            return set()
-
-    def _save_subscribers(self) -> None:
-        """Save subscribers to storage file."""
-        try:
-            with open(self.storage_file, 'w', encoding='utf-8') as f:
-                json.dump(
-                    {'subscribers': list(self._subscribers)},
-                    f,
-                    ensure_ascii=False,
-                    indent=2
-                )
-        except OSError:
-            pass
+    def __init__(self):
+        """Initialize subscriber manager with MongoDB."""
+        self.db = get_mongodb_database()
+        self.collection = self.db['subscribers']
+        # Create index on chat_id for faster queries
+        self.collection.create_index('chat_id', unique=True)
 
     def add_subscriber(self, chat_id: int) -> bool:
         """Add a new subscriber."""
-        if chat_id in self._subscribers:
+        try:
+            result = self.collection.insert_one({'chat_id': chat_id})
+            return result.inserted_id is not None
+        except Exception:
+            # Already exists (duplicate key error)
             return False
-        self._subscribers.add(chat_id)
-        self._save_subscribers()
-        return True
 
     def remove_subscriber(self, chat_id: int) -> bool:
         """Remove a subscriber."""
-        if chat_id not in self._subscribers:
-            return False
-        self._subscribers.remove(chat_id)
-        self._save_subscribers()
-        return True
+        result = self.collection.delete_one({'chat_id': chat_id})
+        return result.deleted_count > 0
 
     def is_subscribed(self, chat_id: int) -> bool:
         """Check if a chat ID is subscribed."""
-        return chat_id in self._subscribers
+        return self.collection.find_one({'chat_id': chat_id}) is not None
 
     def get_subscriber_count(self) -> int:
         """Get the number of subscribers."""
-        return len(self._subscribers)
+        return self.collection.count_documents({})
+
+    def get_all_subscribers(self) -> Set[int]:
+        """Get all subscriber chat IDs."""
+        return {doc['chat_id'] for doc in self.collection.find({}, {'chat_id': 1})}
 
 
-# Language Manager for user language preferences
+# Language Manager for user language preferences (MongoDB version)
 class LanguageManager:
-    """Manages user language preferences."""
+    """Manages user language preferences using MongoDB."""
 
-    def __init__(self, storage_file: str = "/tmp/languages.json"):
-        """Initialize language manager with /tmp storage for Vercel."""
-        self.storage_file = Path(storage_file)
-        self.storage_file.parent.mkdir(exist_ok=True)
-        self._languages: dict = self._load_languages()
-
-    def _load_languages(self) -> dict:
-        """Load language preferences from storage file."""
-        if not self.storage_file.exists():
-            return {}
-        try:
-            with open(self.storage_file, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                return data.get('languages', {})
-        except (json.JSONDecodeError, OSError):
-            return {}
-
-    def _save_languages(self) -> None:
-        """Save language preferences to storage file."""
-        try:
-            with open(self.storage_file, 'w', encoding='utf-8') as f:
-                json.dump(
-                    {'languages': self._languages},
-                    f,
-                    ensure_ascii=False,
-                    indent=2
-                )
-        except OSError:
-            pass
+    def __init__(self):
+        """Initialize language manager with MongoDB."""
+        self.db = get_mongodb_database()
+        self.collection = self.db['languages']
+        # Create index on chat_id for faster queries
+        self.collection.create_index('chat_id', unique=True)
 
     def set_language(self, chat_id: int, language: str) -> None:
         """Set language preference for a user."""
-        self._languages[str(chat_id)] = language
-        self._save_languages()
+        self.collection.update_one(
+            {'chat_id': chat_id},
+            {'$set': {'language': language}},
+            upsert=True
+        )
 
     def get_language(self, chat_id: int) -> str:
         """Get language preference for a user (default: ru)."""
-        return self._languages.get(str(chat_id), 'ru')
+        doc = self.collection.find_one({'chat_id': chat_id})
+        return doc['language'] if doc else 'ru'
+
+    def has_language_set(self, chat_id: int) -> bool:
+        """Check if user has explicitly set a language preference."""
+        return self.collection.find_one({'chat_id': chat_id}) is not None
 
 
 # Translations dictionary
@@ -451,7 +427,7 @@ async def handle_start_command(bot: Bot, chat_id: int, user_first_name: str) -> 
     current_lang = language_manager.get_language(chat_id)
 
     # If this is truly first time (no language set and not subscribed), show language selection
-    if current_lang == 'ru' and str(chat_id) not in language_manager._languages and not subscriber_manager.is_subscribed(chat_id):
+    if not language_manager.has_language_set(chat_id) and not subscriber_manager.is_subscribed(chat_id):
         # Show language selection buttons
         keyboard = [
             [InlineKeyboardButton("🇷🇺 Русский", callback_data="lang_ru")],
