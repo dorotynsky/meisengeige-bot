@@ -4,6 +4,7 @@ import json
 import os
 import re
 import sys
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Optional, Set
@@ -96,14 +97,32 @@ class SubscriberManager:
         return len(self._subscribers)
 
 
+# Cache for film data
+_films_cache: Optional[List[Film]] = None
+_films_cache_time: Optional[float] = None
+CACHE_TTL = 300  # 5 minutes in seconds
+
+
 # Film scraping functionality
 def fetch_current_films() -> List[Film]:
     """
-    Fetch current films from Meisengeige website.
+    Fetch current films from Meisengeige website with caching.
 
     Returns:
         List of Film objects
     """
+    global _films_cache, _films_cache_time
+
+    # Check if cache is valid
+    current_time = time.time()
+    if _films_cache is not None and _films_cache_time is not None:
+        cache_age = current_time - _films_cache_time
+        if cache_age < CACHE_TTL:
+            print(f"[DEBUG] Using cached films data (age: {int(cache_age)}s)")
+            return _films_cache
+
+    # Fetch fresh data
+    print("[DEBUG] Fetching fresh films data from website...")
     BASE_URL = "https://www.cinecitta.de/programm/meisengeige/"
     TIMEOUT = 30.0
 
@@ -122,9 +141,18 @@ def fetch_current_films() -> List[Film]:
             if film:
                 films.append(film)
 
+        # Update cache
+        _films_cache = films
+        _films_cache_time = current_time
+        print(f"[DEBUG] Cached {len(films)} films")
+
         return films
     except Exception as e:
         print(f"[ERROR] Failed to fetch films: {e}")
+        # Return cached data if available, even if expired
+        if _films_cache is not None:
+            print("[DEBUG] Returning stale cache due to fetch error")
+            return _films_cache
         return []
 
 
