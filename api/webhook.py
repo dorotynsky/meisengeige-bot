@@ -877,21 +877,21 @@ def get_commands_for_language(lang: str) -> list:
             BotCommand("sources", "🎬 Управление подписками"),
             BotCommand("status", "📊 Проверить статус подписки"),
             BotCommand("language", "🌍 Выбрать язык"),
-            BotCommand("stop", "❌ Отписаться от уведомлений")
+            BotCommand("stop", "❌ Отписаться от всех уведомлений")
         ],
         'de': [
             BotCommand("films", "🎥 Aktuelles Programm anzeigen"),
             BotCommand("sources", "🎬 Abonnements verwalten"),
             BotCommand("status", "📊 Abonnementstatus prüfen"),
             BotCommand("language", "🌍 Sprache wählen"),
-            BotCommand("stop", "❌ Benachrichtigungen abbestellen")
+            BotCommand("stop", "❌ Alle Benachrichtigungen abbestellen")
         ],
         'en': [
             BotCommand("films", "🎥 Show current program"),
             BotCommand("sources", "🎬 Manage subscriptions"),
             BotCommand("status", "📊 Check subscription status"),
             BotCommand("language", "🌍 Change language"),
-            BotCommand("stop", "❌ Unsubscribe from notifications")
+            BotCommand("stop", "❌ Unsubscribe from all notifications")
         ]
     }
     return commands_by_lang.get(lang, commands_by_lang['en'])
