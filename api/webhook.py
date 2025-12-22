@@ -16,6 +16,29 @@ from telegram import Update, Bot, BotCommand, InlineKeyboardButton, InlineKeyboa
 from telegram.error import TelegramError
 
 
+# Cinema source definitions
+CINEMA_SOURCES = {
+    'meisengeige': {
+        'id': 'meisengeige',
+        'display_name': 'Meisengeige',
+        'display_name_ru': 'Meisengeige',
+        'display_name_de': 'Meisengeige',
+        'display_name_en': 'Meisengeige',
+        'url': 'https://www.cinecitta.de/programm/meisengeige/',
+        'venue': 'Cinecitta Nürnberg',
+    },
+    'kinderkino': {
+        'id': 'kinderkino',
+        'display_name': 'Kinderkino (Filmhaus)',
+        'display_name_ru': 'Kinderkino (Filmhaus)',
+        'display_name_de': 'Kinderkino (Filmhaus)',
+        'display_name_en': 'Kinderkino (Filmhaus)',
+        'url': 'https://www.kunstkulturquartier.de/filmhaus/programm/kinderkino',
+        'venue': 'Filmhaus Nürnberg',
+    }
+}
+
+
 # Data models for films
 @dataclass
 class Showtime:
@@ -50,7 +73,7 @@ def get_mongodb_database():
     return client['meisengeige_bot']
 
 
-# Inline SubscriberManager (MongoDB version)
+# Inline SubscriberManager (MongoDB version with multi-source support)
 class SubscriberManager:
     """Manages the list of subscribers for notifications using MongoDB."""
 
@@ -61,31 +84,91 @@ class SubscriberManager:
         # Create index on chat_id for faster queries
         self.collection.create_index('chat_id', unique=True)
 
-    def add_subscriber(self, chat_id: int) -> bool:
-        """Add a new subscriber."""
-        try:
-            result = self.collection.insert_one({'chat_id': chat_id})
-            return result.inserted_id is not None
-        except Exception:
-            # Already exists (duplicate key error)
+    def add_subscription(self, chat_id: int, source_id: str) -> bool:
+        """Add subscription to specific source."""
+        doc = self.collection.find_one({'chat_id': chat_id})
+
+        if doc:
+            # User exists, add source if not already subscribed
+            sources = doc.get('sources', [])
+            if source_id in sources:
+                return False
+            sources.append(source_id)
+            self.collection.update_one(
+                {'chat_id': chat_id},
+                {'$set': {'sources': sources}}
+            )
+            return True
+        else:
+            # New user
+            self.collection.insert_one({
+                'chat_id': chat_id,
+                'sources': [source_id],
+                'language': 'en'
+            })
+            return True
+
+    def remove_subscription(self, chat_id: int, source_id: str) -> bool:
+        """Remove subscription from specific source."""
+        doc = self.collection.find_one({'chat_id': chat_id})
+        if not doc:
             return False
 
+        sources = doc.get('sources', [])
+        if source_id not in sources:
+            return False
+
+        sources.remove(source_id)
+
+        if not sources:
+            # No sources left, remove user entirely
+            self.collection.delete_one({'chat_id': chat_id})
+        else:
+            self.collection.update_one(
+                {'chat_id': chat_id},
+                {'$set': {'sources': sources}}
+            )
+        return True
+
+    def get_subscribers_for_source(self, source_id: str) -> Set[int]:
+        """Get all subscribers for a specific source."""
+        docs = self.collection.find({'sources': source_id}, {'chat_id': 1})
+        return {doc['chat_id'] for doc in docs}
+
+    def get_user_sources(self, chat_id: int) -> List[str]:
+        """Get list of sources user is subscribed to."""
+        doc = self.collection.find_one({'chat_id': chat_id})
+        return doc.get('sources', []) if doc else []
+
+    def is_subscribed(self, chat_id: int, source_id: Optional[str] = None) -> bool:
+        """Check if user is subscribed."""
+        doc = self.collection.find_one({'chat_id': chat_id})
+        if not doc:
+            return False
+        if source_id is None:
+            return len(doc.get('sources', [])) > 0
+        return source_id in doc.get('sources', [])
+
+    def get_subscriber_count(self, source_id: Optional[str] = None) -> int:
+        """Get subscriber count."""
+        if source_id is None:
+            return self.collection.count_documents({})
+        return self.collection.count_documents({'sources': source_id})
+
+    # Legacy methods for backward compatibility
+    def add_subscriber(self, chat_id: int) -> bool:
+        """Legacy: Add subscriber to Meisengeige by default."""
+        return self.add_subscription(chat_id, 'meisengeige')
+
     def remove_subscriber(self, chat_id: int) -> bool:
-        """Remove a subscriber."""
+        """Legacy: Remove all subscriptions."""
         result = self.collection.delete_one({'chat_id': chat_id})
         return result.deleted_count > 0
 
-    def is_subscribed(self, chat_id: int) -> bool:
-        """Check if a chat ID is subscribed."""
-        return self.collection.find_one({'chat_id': chat_id}) is not None
-
-    def get_subscriber_count(self) -> int:
-        """Get the number of subscribers."""
-        return self.collection.count_documents({})
-
     def get_all_subscribers(self) -> Set[int]:
-        """Get all subscriber chat IDs."""
-        return {doc['chat_id'] for doc in self.collection.find({}, {'chat_id': 1})}
+        """Legacy: Get all subscriber chat IDs."""
+        docs = self.collection.find({}, {'chat_id': 1})
+        return {doc['chat_id'] for doc in docs}
 
 
 # Language Manager for user language preferences (MongoDB version)
@@ -215,6 +298,18 @@ TRANSLATIONS = {
         'broadcast_usage': '📢 Использование: /broadcast <сообщение>\n\nОтправит сообщение всем подписчикам.',
         'broadcast_sending': '📤 Отправка сообщения {count} подписчикам...',
         'broadcast_success': '✅ Сообщение успешно отправлено {success} из {total} подписчиков.',
+        'subscribed_to_source': '✅ Вы подписались на {source_name}!\n\nВы будете получать обновления программы этого кинотеатра.',
+        'already_subscribed_source': 'ℹ️ Вы уже подписаны на {source_name}',
+        'unsubscribed_from_source': '✅ Вы отписались от {source_name}',
+        'not_subscribed_source': 'ℹ️ Вы не подписаны на {source_name}',
+        'unknown_source': '❌ Неизвестный источник',
+        'status_active_multi': '✅ <b>Активные подписки</b>',
+        'status_your_subscriptions': '<b>Ваши подписки:</b>',
+        'status_subscriber_counts': '<b>Количество подписчиков:</b>',
+        'use_sources_cmd': 'Используйте /sources для управления подписками',
+        'sources_header': '🎬 <b>Источники программ кинотеатров</b>',
+        'sources_your_subscriptions': '<b>Ваши подписки:</b>',
+        'sources_available_cinemas': '<b>Доступные кинотеатры:</b>',
     },
     'de': {
         'choose_language': '🌍 Sprache wählen',
@@ -242,6 +337,18 @@ TRANSLATIONS = {
         'broadcast_usage': '📢 Verwendung: /broadcast <Nachricht>\n\nSendet Nachricht an alle Abonnenten.',
         'broadcast_sending': '📤 Sende Nachricht an {count} Abonnenten...',
         'broadcast_success': '✅ Nachricht erfolgreich an {success} von {total} Abonnenten gesendet.',
+        'subscribed_to_source': '✅ Sie haben {source_name} abonniert!\n\nSie erhalten Updates zum Programm dieses Kinos.',
+        'already_subscribed_source': 'ℹ️ Sie haben {source_name} bereits abonniert',
+        'unsubscribed_from_source': '✅ Sie haben {source_name} abbestellt',
+        'not_subscribed_source': 'ℹ️ Sie haben {source_name} nicht abonniert',
+        'unknown_source': '❌ Unbekannte Quelle',
+        'status_active_multi': '✅ <b>Aktive Abonnements</b>',
+        'status_your_subscriptions': '<b>Ihre Abonnements:</b>',
+        'status_subscriber_counts': '<b>Abonnentenzahlen:</b>',
+        'use_sources_cmd': 'Verwenden Sie /sources zur Verwaltung der Abonnements',
+        'sources_header': '🎬 <b>Kinoprogramm-Quellen</b>',
+        'sources_your_subscriptions': '<b>Ihre Abonnements:</b>',
+        'sources_available_cinemas': '<b>Verfügbare Kinos:</b>',
     },
     'en': {
         'choose_language': '🌍 Choose language',
@@ -269,6 +376,18 @@ TRANSLATIONS = {
         'broadcast_usage': '📢 Usage: /broadcast <message>\n\nWill send message to all subscribers.',
         'broadcast_sending': '📤 Sending message to {count} subscribers...',
         'broadcast_success': '✅ Message successfully sent to {success} out of {total} subscribers.',
+        'subscribed_to_source': '✅ You subscribed to {source_name}!\n\nYou will receive updates for this cinema\'s program.',
+        'already_subscribed_source': 'ℹ️ You are already subscribed to {source_name}',
+        'unsubscribed_from_source': '✅ You unsubscribed from {source_name}',
+        'not_subscribed_source': 'ℹ️ You are not subscribed to {source_name}',
+        'unknown_source': '❌ Unknown source',
+        'status_active_multi': '✅ <b>Active Subscriptions</b>',
+        'status_your_subscriptions': '<b>Your subscriptions:</b>',
+        'status_subscriber_counts': '<b>Subscriber counts:</b>',
+        'use_sources_cmd': 'Use /sources to manage subscriptions',
+        'sources_header': '🎬 <b>Cinema Program Sources</b>',
+        'sources_your_subscriptions': '<b>Your subscriptions:</b>',
+        'sources_available_cinemas': '<b>Available cinemas:</b>',
     }
 }
 
@@ -620,7 +739,7 @@ async def handle_stop_command(bot: Bot, chat_id: int) -> str:
 
 async def handle_status_command(bot: Bot, chat_id: int) -> str:
     """
-    Handle /status command.
+    Handle /status command - show subscription status for all sources.
 
     Args:
         bot: Bot instance
@@ -631,14 +750,26 @@ async def handle_status_command(bot: Bot, chat_id: int) -> str:
     """
     try:
         print(f"[DEBUG] Checking status for chat_id: {chat_id}")
-        is_subscribed = subscriber_manager.is_subscribed(chat_id)
-        total_subscribers = subscriber_manager.get_subscriber_count()
-        print(f"[DEBUG] is_subscribed={is_subscribed}, total_subscribers={total_subscribers}")
+        user_sources = subscriber_manager.get_user_sources(chat_id)
 
-        if is_subscribed:
-            return get_text(chat_id, 'status_active', count=total_subscribers)
-        else:
+        if not user_sources:
             return get_text(chat_id, 'status_inactive')
+
+        # Build status message with source details
+        lang = language_manager.get_language(chat_id)
+        lines = [get_text(chat_id, 'status_active_multi')]
+
+        for source_id in user_sources:
+            source = CINEMA_SOURCES.get(source_id)
+            if source:
+                count = subscriber_manager.get_subscriber_count(source_id)
+                name_key = f'display_name_{lang}'
+                display_name = source.get(name_key, source['display_name'])
+                lines.append(f"• {display_name} ({count} subscribers)")
+
+        lines.append(f"\n{get_text(chat_id, 'use_sources_cmd')}")
+        return "\n".join(lines)
+
     except Exception as e:
         print(f"[ERROR] Error in handle_status_command: {e}")
         import traceback
@@ -666,6 +797,47 @@ async def handle_language_command(bot: Bot, chat_id: int) -> None:
         chat_id=chat_id,
         text="🌍 Выберите язык / Choose language / Sprache wählen",
         reply_markup=reply_markup
+    )
+
+
+async def handle_sources_command(bot: Bot, chat_id: int) -> None:
+    """
+    Handle /sources command - show available sources with subscribe/unsubscribe buttons.
+
+    Args:
+        bot: Bot instance
+        chat_id: User's chat ID
+    """
+    lang = language_manager.get_language(chat_id)
+    user_sources = subscriber_manager.get_user_sources(chat_id)
+
+    # Build message
+    message = get_text(chat_id, 'sources_header')
+
+    # Build keyboard with source buttons
+    keyboard = []
+    for source_id, source_info in CINEMA_SOURCES.items():
+        name_key = f'display_name_{lang}'
+        display_name = source_info.get(name_key, source_info['display_name'])
+
+        if source_id in user_sources:
+            # Subscribed - show unsubscribe button
+            button_text = f"✅ {display_name}"
+            callback_data = f"unsub:{source_id}"
+        else:
+            # Not subscribed - show subscribe button
+            button_text = f"➕ {display_name}"
+            callback_data = f"sub:{source_id}"
+
+        keyboard.append([InlineKeyboardButton(button_text, callback_data=callback_data)])
+
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await bot.send_message(
+        chat_id=chat_id,
+        text=message,
+        reply_markup=reply_markup,
+        parse_mode='HTML'
     )
 
 
@@ -963,6 +1135,32 @@ async def process_update(update_data: dict) -> dict:
                 # Return to films list
                 await handle_films_command(bot, chat_id)
 
+            elif callback_data.startswith('sub:'):
+                # Subscribe to source
+                source_id = callback_data.replace('sub:', '')
+                if source_id in CINEMA_SOURCES:
+                    source = CINEMA_SOURCES[source_id]
+                    if subscriber_manager.add_subscription(chat_id, source_id):
+                        message = get_text(chat_id, 'subscribed_to_source', source_name=source['display_name'])
+                    else:
+                        message = get_text(chat_id, 'already_subscribed_source', source_name=source['display_name'])
+                    await bot.send_message(chat_id=chat_id, text=message)
+                else:
+                    await bot.send_message(chat_id=chat_id, text=get_text(chat_id, 'unknown_source'))
+
+            elif callback_data.startswith('unsub:'):
+                # Unsubscribe from source
+                source_id = callback_data.replace('unsub:', '')
+                if source_id in CINEMA_SOURCES:
+                    source = CINEMA_SOURCES[source_id]
+                    if subscriber_manager.remove_subscription(chat_id, source_id):
+                        message = get_text(chat_id, 'unsubscribed_from_source', source_name=source['display_name'])
+                    else:
+                        message = get_text(chat_id, 'not_subscribed_source', source_name=source['display_name'])
+                    await bot.send_message(chat_id=chat_id, text=message)
+                else:
+                    await bot.send_message(chat_id=chat_id, text=get_text(chat_id, 'unknown_source'))
+
             return {'status': 'success', 'type': 'callback_query'}
 
         # Handle text messages
@@ -1000,6 +1198,10 @@ async def process_update(update_data: dict) -> dict:
         elif text == '/films':
             print("[DEBUG] Routing to handle_films_command")
             await handle_films_command(bot, chat_id)
+            return {'status': 'success', 'command': text}
+        elif text == '/sources':
+            print("[DEBUG] Routing to handle_sources_command")
+            await handle_sources_command(bot, chat_id)
             return {'status': 'success', 'command': text}
         elif text.startswith('/broadcast'):
             print("[DEBUG] Routing to handle_broadcast_command")
