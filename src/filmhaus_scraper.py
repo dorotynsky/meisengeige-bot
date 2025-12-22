@@ -51,8 +51,8 @@ class FilmhausScraper(BaseCinemaScraper):
         """
         soup = BeautifulSoup(html, 'html.parser')
 
-        # Find event cards with vkList class
-        cards = soup.find_all('div', class_='vkList')
+        # Find event cards - they have 'kachel' class
+        cards = soup.find_all('div', class_='kachel')
 
         films = []
         for card in cards:
