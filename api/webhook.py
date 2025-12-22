@@ -644,9 +644,93 @@ def fetch_kinderkino_films() -> List[Film]:
         return []
 
 
+def _fetch_kinderkino_detail(detail_url: str) -> Optional[dict]:
+    """
+    Fetch and parse Kinderkino detail page for additional film information.
+
+    Args:
+        detail_url: Full URL to the detail page
+
+    Returns:
+        Dictionary with film details or None if parsing fails
+    """
+    try:
+        with httpx.Client(timeout=30.0) as client:
+            response = client.get(detail_url, follow_redirects=True)
+            response.raise_for_status()
+            html = response.text
+
+        soup = BeautifulSoup(html, 'html.parser')
+        main_content = soup.find('main')
+        if not main_content:
+            return None
+
+        # Extract full description (first paragraph that's not pricing)
+        description = None
+        for p in main_content.find_all('p'):
+            text = p.get_text(strip=True)
+            if text and 'Eintritt' not in text and len(text) > 50:
+                description = text
+                break
+
+        # Parse all metadata from the text
+        all_text = main_content.get_text() if main_content else ''
+
+        # Extract duration
+        duration = None
+        duration_match = re.search(r'Länge:\s*(\d+)\s*Min', all_text, re.IGNORECASE)
+        if duration_match:
+            duration = int(duration_match.group(1))
+
+        # Extract FSK rating
+        fsk_rating = None
+        fsk_match = re.search(r'FSK:\s*([^\n,]+?)(?:,|Land:|$)', all_text, re.IGNORECASE)
+        if fsk_match:
+            fsk_rating = fsk_match.group(1).strip()
+
+        # Extract genre
+        genre = None
+        genre_match = re.search(r'(Animation|Dokumentarfilm|Drama|Komödie|Thriller|Action|Fantasy|Abenteuer)(?:\s|Land:|Länge:|$)', all_text, re.IGNORECASE)
+        if genre_match:
+            genre = genre_match.group(1)
+
+        # Extract country
+        country = None
+        country_match = re.search(r'Land:\s*([^\n]+?)(?:Jahr:|Regie:|$)', all_text, re.IGNORECASE)
+        if country_match:
+            country = country_match.group(1).strip()
+
+        # Extract year
+        year = None
+        year_match = re.search(r'Jahr:\s*(\d{4})', all_text)
+        if year_match:
+            year = year_match.group(1)
+
+        # Extract director
+        director = None
+        director_match = re.search(r'Regie:\s*([^\n]+?)(?:Animation|Länge:|Sprache:|$)', all_text, re.IGNORECASE)
+        if director_match:
+            director = director_match.group(1).strip()
+
+        return {
+            'description': description,
+            'duration': duration,
+            'fsk_rating': fsk_rating,
+            'genre': genre,
+            'country': country,
+            'year': year,
+            'director': director,
+        }
+
+    except Exception as e:
+        print(f"[ERROR] Failed to parse Kinderkino detail page: {e}")
+        return None
+
+
 def _parse_kinderkino_event(card) -> Optional[Film]:
     """
     Parse a single Kinderkino event from its container element.
+    Fetches detail page for enriched information.
 
     Args:
         card: BeautifulSoup element containing event data
@@ -655,11 +739,12 @@ def _parse_kinderkino_event(card) -> Optional[Film]:
         Film object or None if parsing fails
     """
     try:
-        # Extract title from detailLink
+        # Extract title and detail URL from detailLink
         title_link = card.find('a', class_='detailLink')
         if not title_link:
             return None
         title = title_link.get_text(strip=True)
+        detail_url = title_link.get('href')
 
         # Extract poster image
         poster_url = None
@@ -667,7 +752,11 @@ def _parse_kinderkino_event(card) -> Optional[Film]:
         if img and img.get('src'):
             poster_url = img['src']
             if not poster_url.startswith('http'):
-                poster_url = f"https://www.kunstkulturquartier.de{poster_url}"
+                # Check if it's already a full URL with domain
+                if poster_url.startswith('http'):
+                    pass  # Already full URL
+                else:
+                    poster_url = f"https://www.kunstkulturquartier.de{poster_url}" if poster_url.startswith('/') else poster_url
 
         # Extract date/time and venue information
         date_time_text = None
@@ -693,18 +782,30 @@ def _parse_kinderkino_event(card) -> Optional[Film]:
             if showtime:
                 showtimes.append(showtime)
 
-        # Extract description if available
+        # Fetch detail page for enriched information
         description = None
-        desc_elem = card.find('p')
-        if desc_elem:
-            description = desc_elem.get_text(strip=True)
+        fsk_rating = None
+        duration = None
+        genres = ["Kinderkino"]
 
-        # All events from this page are Kinderkino category
+        if detail_url:
+            try:
+                full_detail_url = f"https://www.kunstkulturquartier.de{detail_url}" if detail_url.startswith('/') else detail_url
+                detail_info = _fetch_kinderkino_detail(full_detail_url)
+                if detail_info:
+                    description = detail_info.get('description')
+                    fsk_rating = detail_info.get('fsk_rating')
+                    duration = detail_info.get('duration')
+                    if detail_info.get('genre'):
+                        genres = [detail_info['genre'], "Kinderkino"]
+            except Exception as e:
+                print(f"[WARNING] Failed to fetch detail for {title}: {e}")
+
         return Film(
             title=title,
-            genres=["Kinderkino"],  # Category
-            fsk_rating=None,  # Parse if available in description
-            duration=None,  # Parse if available in description
+            genres=genres,
+            fsk_rating=fsk_rating,
+            duration=duration,
             description=description,
             poster_url=poster_url,
             film_id=None,
