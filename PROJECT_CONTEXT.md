@@ -1,29 +1,32 @@
 # Meisengeige Bot - Project Context
 
 ## Project Goal
-Create a script that runs via GitHub Actions to monitor updates to the Meisengeige cinema program at Cinecitta (https://www.cinecitta.de/programm/meisengeige/) and send notifications to a Telegram bot when updates are detected.
+Monitor updates to multiple cinema programs (Meisengeige at Cinecitta and Kinderkino at Filmhaus Nürnberg) via GitHub Actions and send notifications to subscribers via Telegram bot.
 
 ## Current Status
-- Telegram bot has been created ✓
+- Multi-source cinema monitoring implemented ✓
+- Independent per-source subscriptions ✓
+- Interactive bot commands with inline keyboards ✓
 - Development environment configured (Python 3.14.2 locally, 3.12 in CI) ✓
 - GitHub repository connected (https://github.com/dorotynsky/meisengeige-bot) ✓
-- Project structure created ✓
-- Core modules implemented ✓
-- Basic functionality tested ✓
-- Showtime parsing fixed and working correctly ✓
-- GitHub Actions configured and tested ✓
-- Poster images added to notifications ✓
-- **Status:** Fully automated with visual notifications! 🎉🎬
+- GitHub Actions configured for multi-source monitoring ✓
+- Backward compatibility with existing subscribers ✓
+- **Status:** Fully automated multi-source monitoring! 🎉🎬
 
-## Chosen Approach
-**HTML Scraping Method** (Updated after analysis)
-- Parse HTML structure from the Meisengeige page
-- Extract film data from list items with class `filmapi-container__list--li`
-- Extract showtime tables with dates, times, rooms, and language info
-- Compare with previous snapshot to detect changes
-- Future: Add filters (language, genre, time, FSK rating, etc.)
+## Architecture
+**Multi-Source Monitoring System**
+- Base scraper abstraction with source registry pattern
+- Two scrapers implemented:
+  - **MeisengeigeScraper**: Parses Cinecitta Meisengeige program
+  - **FilmhausScraper**: Parses Filmhaus Kinderkino program
+- Per-source snapshot storage (separate JSON files)
+- Per-source subscription management
+- Independent subscriptions: users choose Meisengeige, Kinderkino, or both
+- Source-specific notifications with poster images
 
-## Page Structure (Analyzed)
+## Page Structures
+
+### Meisengeige (Cinecitta)
 Each film on https://www.cinecitta.de/programm/meisengeige/ contains:
 - **Title**: In `<h3 class="text-white">` tag
 - **Genres**: Tags like "Arthouse", "Drama", "Komödie", "Thriller", "Dokumentation"
@@ -37,6 +40,16 @@ Each film on https://www.cinecitta.de/programm/meisengeige/ contains:
   - Language (e.g., "OV" = original version, "OmU" = with subtitles)
   - Times (e.g., "20:30")
 
+### Kinderkino (Filmhaus)
+Each event on https://www.kunstkulturquartier.de/filmhaus/programm/kinderkino contains:
+- **Title**: In `<a class="detailLink">` tag
+- **Date/Time**: Format "Mo / 22.12.2025 / 15:00 Uhr"
+- **Venue**: "Filmhaus Nürnberg - kinoeins"
+- **Category**: "Kinderkino"
+- **Poster Image**: Scene stills from films
+- **Description**: Brief plot summary
+- **Schedule**: Typically Fridays-Sundays at 3 PM
+
 ## Technical Stack
 - **Python**: 3.14.2
 - **Package Manager**: Poetry
@@ -47,8 +60,19 @@ Each film on https://www.cinecitta.de/programm/meisengeige/ contains:
   - python-telegram-bot - for Telegram integration
   - pytest, black, ruff - for development and testing
 
-## Current Task
-Configuring Python 3.14.2 in the development environment. PyCharm currently shows Python 3.10 instead of 3.14.2.
+## Bot Commands
+- `/start [source_id]` - Subscribe to cinema source(s) with interactive menu
+- `/stop [source_id]` - Unsubscribe from source(s) with interactive menu
+- `/status` - View active subscriptions and subscriber counts
+- `/sources` - List all available cinema sources with URLs
+
+## Recent Changes
+- Added multi-source cinema monitoring support
+- Implemented FilmhausScraper for Kinderkino program
+- Created base scraper abstraction and source registry
+- Enhanced subscriber management for per-source subscriptions
+- Updated bot commands with inline keyboards
+- Maintained backward compatibility with existing subscribers
 
 ## Configuration Files
 - `.mise.toml` - mise configuration (Python 3.14.2)
