@@ -288,11 +288,14 @@ TRANSLATIONS = {
         'not_subscribed': 'Вы не подписаны на уведомления.\n\nИспользуйте команду /start для подписки.',
         'status_active': '✅ <b>Подписка активна</b>\n\nВы получаете обновления программы Meisengeige.\nВсего подписчиков: {count}\n\nИспользуйте меню команд (☰) для управления подпиской.',
         'status_inactive': '❌ <b>Не подписаны</b>\n\nВы не получаете уведомления.\n\nИспользуйте команду /start для подписки.',
+        'films_select_source': '🎬 <b>Выберите кинотеатр</b>\n\nВыберите источник для просмотра программы:',
         'films_title': '🎬 <b>Текущая программа Meisengeige</b>\n\nВсего фильмов: {count}\n\nНажмите на фильм чтобы увидеть детали:',
+        'films_title_source': '🎬 <b>Текущая программа {source_name}</b>\n\nВсего фильмов: {count}\n\nНажмите на фильм чтобы увидеть детали:',
         'films_error': '❌ Не удалось загрузить список фильмов. Попробуйте позже.',
         'film_not_found': '❌ Фильм не найден.',
         'showtimes': '<b>Сеансы:</b>',
         'back_to_list': '◀️ Вернуться к списку',
+        'back_to_sources': '◀️ Вернуться к выбору кинотеатра',
         'unknown_command': 'Неизвестная команда.\n\nИспользуйте меню команд (☰) для управления подпиской.',
         'broadcast_no_permission': '❌ У вас нет прав для отправки рассылок.',
         'broadcast_usage': '📢 Использование: /broadcast <сообщение>\n\nОтправит сообщение всем подписчикам.',
@@ -327,11 +330,14 @@ TRANSLATIONS = {
         'not_subscribed': 'Sie sind nicht für Benachrichtigungen angemeldet.\n\nVerwenden Sie /start zum Abonnieren.',
         'status_active': '✅ <b>Abonnement aktiv</b>\n\nSie erhalten Meisengeige-Programmupdates.\nGesamtabonnenten: {count}\n\nVerwenden Sie das Befehlsmenü (☰) zur Verwaltung.',
         'status_inactive': '❌ <b>Nicht abonniert</b>\n\nSie erhalten keine Benachrichtigungen.\n\nVerwenden Sie /start zum Abonnieren.',
+        'films_select_source': '🎬 <b>Kino wählen</b>\n\nWählen Sie die Quelle zur Ansicht des Programms:',
         'films_title': '🎬 <b>Aktuelles Meisengeige-Programm</b>\n\nFilme insgesamt: {count}\n\nKlicken Sie auf einen Film für Details:',
+        'films_title_source': '🎬 <b>Aktuelles {source_name}-Programm</b>\n\nFilme insgesamt: {count}\n\nKlicken Sie auf einen Film für Details:',
         'films_error': '❌ Filmliste konnte nicht geladen werden. Bitte später versuchen.',
         'film_not_found': '❌ Film nicht gefunden.',
         'showtimes': '<b>Vorstellungen:</b>',
         'back_to_list': '◀️ Zurück zur Liste',
+        'back_to_sources': '◀️ Zurück zur Kinoauswahl',
         'unknown_command': 'Unbekannter Befehl.\n\nVerwenden Sie das Befehlsmenü (☰) zur Verwaltung.',
         'broadcast_no_permission': '❌ Sie haben keine Berechtigung zum Senden von Broadcasts.',
         'broadcast_usage': '📢 Verwendung: /broadcast <Nachricht>\n\nSendet Nachricht an alle Abonnenten.',
@@ -366,11 +372,14 @@ TRANSLATIONS = {
         'not_subscribed': 'You are not subscribed to notifications.\n\nUse /start to subscribe.',
         'status_active': '✅ <b>Subscription Active</b>\n\nYou are receiving Meisengeige program updates.\nTotal subscribers: {count}\n\nUse the command menu (☰) to manage your subscription.',
         'status_inactive': '❌ <b>Not Subscribed</b>\n\nYou are not receiving notifications.\n\nUse /start to subscribe.',
+        'films_select_source': '🎬 <b>Select Cinema</b>\n\nChoose a source to view the program:',
         'films_title': '🎬 <b>Current Meisengeige Program</b>\n\nTotal films: {count}\n\nClick on a film to see details:',
+        'films_title_source': '🎬 <b>Current {source_name} Program</b>\n\nTotal films: {count}\n\nClick on a film to see details:',
         'films_error': '❌ Failed to load film list. Please try later.',
         'film_not_found': '❌ Film not found.',
         'showtimes': '<b>Showtimes:</b>',
         'back_to_list': '◀️ Back to list',
+        'back_to_sources': '◀️ Back to cinema selection',
         'unknown_command': 'Unknown command.\n\nUse the command menu (☰) to manage your subscription.',
         'broadcast_no_permission': '❌ You don\'t have permission to send broadcasts.',
         'broadcast_usage': '📢 Usage: /broadcast <message>\n\nWill send message to all subscribers.',
@@ -408,25 +417,55 @@ CACHE_TTL = 300  # 5 minutes in seconds
 
 
 # Film scraping functionality
-def fetch_current_films() -> List[Film]:
+def fetch_current_films(source_id: str = 'meisengeige') -> List[Film]:
     """
-    Fetch current films from Meisengeige website with caching.
+    Fetch current films from cinema website with caching.
+
+    Args:
+        source_id: Cinema source ID ('meisengeige' or 'kinderkino')
 
     Returns:
         List of Film objects
     """
     global _films_cache, _films_cache_time
 
+    # Per-source cache key
+    cache_key = f"{source_id}_cache"
+    cache_time_key = f"{source_id}_cache_time"
+
     # Check if cache is valid
     current_time = time.time()
-    if _films_cache is not None and _films_cache_time is not None:
-        cache_age = current_time - _films_cache_time
+    if cache_key in globals() and cache_time_key in globals():
+        cache_age = current_time - globals()[cache_time_key]
         if cache_age < CACHE_TTL:
-            print(f"[DEBUG] Using cached films data (age: {int(cache_age)}s)")
-            return _films_cache
+            print(f"[DEBUG] Using cached films data for {source_id} (age: {int(cache_age)}s)")
+            return globals()[cache_key]
 
-    # Fetch fresh data
-    print("[DEBUG] Fetching fresh films data from website...")
+    # Fetch fresh data based on source
+    print(f"[DEBUG] Fetching fresh films data from {source_id}...")
+
+    if source_id == 'meisengeige':
+        films = fetch_meisengeige_films()
+    elif source_id == 'kinderkino':
+        films = fetch_kinderkino_films()
+    else:
+        print(f"[ERROR] Unknown source_id: {source_id}")
+        return []
+
+    # Update cache
+    globals()[cache_key] = films
+    globals()[cache_time_key] = current_time
+
+    return films
+
+
+def fetch_meisengeige_films() -> List[Film]:
+    """
+    Fetch films from Meisengeige website.
+
+    Returns:
+        List of Film objects
+    """
     BASE_URL = "https://www.cinecitta.de/programm/meisengeige/"
     TIMEOUT = 30.0
 
@@ -445,18 +484,10 @@ def fetch_current_films() -> List[Film]:
             if film:
                 films.append(film)
 
-        # Update cache
-        _films_cache = films
-        _films_cache_time = current_time
-        print(f"[DEBUG] Cached {len(films)} films")
-
+        print(f"[DEBUG] Fetched {len(films)} films from Meisengeige")
         return films
     except Exception as e:
-        print(f"[ERROR] Failed to fetch films: {e}")
-        # Return cached data if available, even if expired
-        if _films_cache is not None:
-            print("[DEBUG] Returning stale cache due to fetch error")
-            return _films_cache
+        print(f"[ERROR] Failed to fetch Meisengeige films: {e}")
         return []
 
 
@@ -578,6 +609,149 @@ def _parse_showtimes(container) -> List[Showtime]:
                         )
 
     return showtimes
+
+
+def fetch_kinderkino_films() -> List[Film]:
+    """
+    Fetch films from Kinderkino (Filmhaus) website.
+
+    Returns:
+        List of Film objects
+    """
+    BASE_URL = "https://www.kunstkulturquartier.de/filmhaus/programm/kinderkino"
+    TIMEOUT = 30.0
+
+    try:
+        with httpx.Client(timeout=TIMEOUT) as client:
+            response = client.get(BASE_URL)
+            response.raise_for_status()
+            html = response.text
+
+        soup = BeautifulSoup(html, 'html.parser')
+        # Find event cards - they have 'kachel' class
+        cards = soup.find_all('div', class_='kachel')
+
+        films = []
+        for card in cards:
+            film = _parse_kinderkino_event(card)
+            if film:
+                films.append(film)
+
+        print(f"[DEBUG] Fetched {len(films)} films from Kinderkino")
+        return films
+    except Exception as e:
+        print(f"[ERROR] Failed to fetch Kinderkino films: {e}")
+        return []
+
+
+def _parse_kinderkino_event(card) -> Optional[Film]:
+    """
+    Parse a single Kinderkino event from its container element.
+
+    Args:
+        card: BeautifulSoup element containing event data
+
+    Returns:
+        Film object or None if parsing fails
+    """
+    try:
+        # Extract title from detailLink
+        title_link = card.find('a', class_='detailLink')
+        if not title_link:
+            return None
+        title = title_link.get_text(strip=True)
+
+        # Extract poster image
+        poster_url = None
+        img = card.find('img')
+        if img and img.get('src'):
+            poster_url = img['src']
+            if not poster_url.startswith('http'):
+                poster_url = f"https://www.kunstkulturquartier.de{poster_url}"
+
+        # Extract date/time and venue information
+        date_time_text = None
+        venue = "Filmhaus Nürnberg"
+
+        # Look for text containing date pattern (e.g., "Mo / 22.12.2025 / 15:00 Uhr")
+        for text_elem in card.find_all(string=True):
+            text = text_elem.strip()
+            if re.search(r'\d{2}\.\d{2}\.\d{4}', text):
+                date_time_text = text
+                break
+
+        # Try to extract venue more precisely if available
+        venue_div = card.find('div', string=re.compile(r'Filmhaus'))
+        if venue_div:
+            venue_text = venue_div.get_text(strip=True)
+            if venue_text:
+                venue = venue_text
+
+        showtimes = []
+        if date_time_text:
+            showtime = _parse_kinderkino_datetime(date_time_text, venue)
+            if showtime:
+                showtimes.append(showtime)
+
+        # Extract description if available
+        description = None
+        desc_elem = card.find('p')
+        if desc_elem:
+            description = desc_elem.get_text(strip=True)
+
+        # All events from this page are Kinderkino category
+        return Film(
+            title=title,
+            genres=["Kinderkino"],  # Category
+            fsk_rating=None,  # Parse if available in description
+            duration=None,  # Parse if available in description
+            description=description,
+            poster_url=poster_url,
+            film_id=None,
+            showtimes=showtimes,
+        )
+
+    except Exception as e:
+        print(f"[ERROR] Error parsing Kinderkino event: {e}")
+        return None
+
+
+def _parse_kinderkino_datetime(text: str, venue: str) -> Optional[Showtime]:
+    """
+    Parse date/time from Filmhaus format.
+
+    Args:
+        text: Date/time string (e.g., 'Mo / 22.12.2025 / 15:00 Uhr')
+        venue: Venue name
+
+    Returns:
+        Showtime object or None if parsing fails
+    """
+    try:
+        # Extract components: day / DD.MM.YYYY / HH:MM Uhr
+        match = re.search(r'(\w+)\s*/\s*(\d{2}\.\d{2}\.?\d*)\s*/\s*(\d{2}:\d{2})', text)
+        if not match:
+            return None
+
+        day_of_week, date_str, time_str = match.groups()
+
+        # Convert date format to match Meisengeige format
+        # From "22.12.2025" to "Mo.22.12"
+        date_parts = date_str.split('.')
+        if len(date_parts) >= 2:
+            formatted_date = f"{day_of_week}.{date_parts[0]}.{date_parts[1]}"
+        else:
+            formatted_date = f"{day_of_week}.{date_str}"
+
+        return Showtime(
+            date=formatted_date,
+            time=time_str,
+            room=venue,
+            language=None,  # Can be parsed if available
+        )
+    except Exception as e:
+        print(f"[ERROR] Error parsing datetime '{text}': {e}")
+        return None
 
 
 # Initialize subscriber manager
@@ -936,44 +1110,29 @@ async def handle_broadcast_command(bot: Bot, chat_id: int, message_text: str) ->
 
 async def handle_films_command(bot: Bot, chat_id: int) -> None:
     """
-    Handle /films command - show brief list of current films with inline buttons.
+    Handle /films command - show cinema source selection.
 
     Args:
         bot: Bot instance
         chat_id: User's chat ID
     """
     try:
-        print("[DEBUG] Fetching current films...")
-        films = fetch_current_films()
-
-        if not films:
-            await bot.send_message(
-                chat_id=chat_id,
-                text=get_text(chat_id, 'films_error')
-            )
-            return
-
-        # Send header message in user's language
-        header = get_text(chat_id, 'films_title', count=len(films))
-
-        # Create inline keyboard with film buttons
+        # Show source selection buttons
         keyboard = []
-        for film in films:
-            # Create button text with emoji
-            button_text = f"🎥 {film.title}"
-            # Use film_id or title as callback data
-            callback_data = f"film_{film.film_id}" if film.film_id else f"film_{films.index(film)}"
+        for source_id, source in CINEMA_SOURCES.items():
+            button_text = f"🎬 {source['display_name']}"
+            callback_data = f"films_source:{source_id}"
             keyboard.append([InlineKeyboardButton(button_text, callback_data=callback_data)])
 
         reply_markup = InlineKeyboardMarkup(keyboard)
 
         await bot.send_message(
             chat_id=chat_id,
-            text=header,
+            text=get_text(chat_id, 'films_select_source'),
             parse_mode='HTML',
             reply_markup=reply_markup
         )
-        print(f"[DEBUG] Sent films list with {len(films)} films")
+        print("[DEBUG] Sent cinema source selection for films")
 
     except Exception as e:
         print(f"[ERROR] Error in handle_films_command: {e}")
@@ -985,18 +1144,89 @@ async def handle_films_command(bot: Bot, chat_id: int) -> None:
         )
 
 
-async def handle_film_details_callback(bot: Bot, chat_id: int, film_id: str) -> None:
+async def handle_films_list(bot: Bot, chat_id: int, source_id: str) -> None:
+    """
+    Handle showing film list for a specific source.
+
+    Args:
+        bot: Bot instance
+        chat_id: User's chat ID
+        source_id: Cinema source ID
+    """
+    try:
+        print(f"[DEBUG] Fetching films for source: {source_id}")
+        films = fetch_current_films(source_id)
+
+        if not films:
+            await bot.send_message(
+                chat_id=chat_id,
+                text=get_text(chat_id, 'films_error')
+            )
+            return
+
+        # Get source display name
+        source_name = CINEMA_SOURCES[source_id]['display_name']
+
+        # Send header message in user's language
+        header = get_text(chat_id, 'films_title_source', source_name=source_name, count=len(films))
+
+        # Create inline keyboard with film buttons
+        keyboard = []
+        for film in films:
+            # Create button text with emoji
+            button_text = f"🎥 {film.title}"
+            # Use source-specific callback data
+            callback_data = f"film_{source_id}_{film.film_id}" if film.film_id else f"film_{source_id}_{films.index(film)}"
+            keyboard.append([InlineKeyboardButton(button_text, callback_data=callback_data)])
+
+        # Add back button
+        keyboard.append([InlineKeyboardButton(get_text(chat_id, 'back_to_sources'), callback_data='back_to_film_sources')])
+
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await bot.send_message(
+            chat_id=chat_id,
+            text=header,
+            parse_mode='HTML',
+            reply_markup=reply_markup
+        )
+        print(f"[DEBUG] Sent films list with {len(films)} films from {source_name}")
+
+    except Exception as e:
+        print(f"[ERROR] Error in handle_films_list: {e}")
+        import traceback
+        traceback.print_exc()
+        await bot.send_message(
+            chat_id=chat_id,
+            text=get_text(chat_id, 'films_error')
+        )
+
+
+async def handle_film_details_callback(bot: Bot, chat_id: int, film_data: str) -> None:
     """
     Handle callback query for film details.
 
     Args:
         bot: Bot instance
         chat_id: User's chat ID
-        film_id: Film ID or index from callback data
+        film_data: Film data in format "source_id_film_id" or just "film_id" (legacy)
     """
     try:
-        print(f"[DEBUG] Fetching details for film_id: {film_id}")
-        films = fetch_current_films()
+        print(f"[DEBUG] Fetching details for film_data: {film_data}")
+
+        # Parse source_id and film_id from callback data
+        # New format: "meisengeige_123" or "kinderkino_5"
+        # Legacy format: "123" (assume meisengeige)
+        parts = film_data.split('_', 1)
+        if len(parts) == 2 and parts[0] in CINEMA_SOURCES:
+            source_id = parts[0]
+            film_id = parts[1]
+        else:
+            # Legacy format or single-part ID - assume meisengeige
+            source_id = 'meisengeige'
+            film_id = film_data
+
+        films = fetch_current_films(source_id)
 
         # Find the requested film
         film = None
@@ -1039,7 +1269,7 @@ async def handle_film_details_callback(bot: Bot, chat_id: int, film_id: str) -> 
 
         # Create back button with translation
         back_button_text = get_text(chat_id, 'back_to_list')
-        keyboard = [[InlineKeyboardButton(back_button_text, callback_data="back_to_list")]]
+        keyboard = [[InlineKeyboardButton(back_button_text, callback_data=f"back_to_list:{source_id}")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
         # Send photo with details
@@ -1132,11 +1362,22 @@ async def process_update(update_data: dict) -> dict:
 
             elif callback_data.startswith('film_'):
                 # Show film details
-                film_id = callback_data.replace('film_', '')
-                await handle_film_details_callback(bot, chat_id, film_id)
-            elif callback_data == 'back_to_list':
-                # Return to films list
+                film_data = callback_data.replace('film_', '')
+                await handle_film_details_callback(bot, chat_id, film_data)
+
+            elif callback_data.startswith('films_source:'):
+                # Show film list for selected source
+                source_id = callback_data.replace('films_source:', '')
+                await handle_films_list(bot, chat_id, source_id)
+
+            elif callback_data == 'back_to_film_sources':
+                # Return to source selection
                 await handle_films_command(bot, chat_id)
+
+            elif callback_data.startswith('back_to_list:'):
+                # Return to films list for specific source
+                source_id = callback_data.replace('back_to_list:', '')
+                await handle_films_list(bot, chat_id, source_id)
 
             elif callback_data.startswith('sub:'):
                 # Subscribe to source
