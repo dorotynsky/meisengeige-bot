@@ -1,7 +1,7 @@
-# Meisengeige Bot - Project Context
+# Nürnberg Kino Bot - Project Context
 
 ## Project Goal
-Monitor updates to multiple cinema programs (Meisengeige at Cinecitta and Kinderkino at Filmhaus Nürnberg) via GitHub Actions and send notifications to subscribers via Telegram bot.
+Monitor cinema programs in Nuremberg (Meisengeige at Cinecitta and Kinderkino at Filmhaus) via GitHub Actions and send notifications to subscribers via Telegram bot.
 
 ## Current Status
 - Multi-source cinema monitoring implemented ✓

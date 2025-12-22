@@ -70,7 +70,7 @@ def get_mongodb_database():
         raise ValueError("MONGODB_URI environment variable not set")
 
     client = MongoClient(mongodb_uri)
-    return client['meisengeige_bot']
+    return client['nuernberg_kino_bot']
 
 
 # Inline SubscriberManager (MongoDB version with multi-source support)
@@ -1615,7 +1615,7 @@ class handler(BaseHTTPRequestHandler):
         self.send_header('Content-Type', 'application/json')
         self.end_headers()
         self.wfile.write(
-            json.dumps({'status': 'healthy', 'bot': 'meisengeige'}).encode()
+            json.dumps({'status': 'healthy', 'bot': 'nuernberg-kino-bot'}).encode()
         )
 
     def do_POST(self):

@@ -1,7 +1,7 @@
 [tool.poetry]
-name = "meisengeige-bot"
+name = "nuernberg-kino-bot"
 version = "0.1.0"
-description = "Daily monitoring bot for Meisengeige events at Cinecitta with Telegram notifications"
+description = "Cinema program monitoring bot for Nuremberg (Meisengeige, Kinderkino) with Telegram notifications"
 authors = ["Grigorii Dorotynskii"]
 readme = "README.md"
 packages = [{include = "src"}]

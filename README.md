@@ -1,13 +1,16 @@
-# Meisengeige Bot
+# Nürnberg Kino Bot
 
-Daily monitoring bot for Meisengeige events at Cinecitta with Telegram notifications.
+Cinema program monitoring bot for Nuremberg with Telegram notifications.
 
 ## Features
 
-- Daily automated check of https://www.cinecitta.de/programm/meisengeige/
-- Detects new events and sends Telegram notifications
-- State persistence to avoid duplicate notifications
-- Runs automatically via GitHub Actions
+- **Multi-source monitoring**: Meisengeige (Cinecitta) and Kinderkino (Filmhaus)
+- **Daily automated checks** via GitHub Actions
+- **Independent subscriptions**: Users can subscribe to specific cinema sources
+- **Rich film information**: Posters, descriptions, showtimes, FSK ratings
+- **Multi-language support**: Russian, German, English
+- **Interactive bot commands** with inline keyboards
+- **State persistence** to avoid duplicate notifications
 
 ## Setup
 
@@ -32,15 +35,30 @@ Daily monitoring bot for Meisengeige events at Cinecitta with Telegram notificat
 
 ### Local Development
 
+Run the monitoring script:
 ```bash
-mise exec -- poetry run python src/check_meisengeige.py
+poetry run python -m src.main
 ```
+
+Run the bot locally:
+```bash
+poetry run python -m src.run_bot
+```
+
+## Bot Commands
+
+- `/films` - View current cinema programs
+- `/sources` - Manage cinema source subscriptions
+- `/start` - Subscribe to notifications
+- `/status` - Check subscription status
+- `/language` - Change bot language
+- `/stop` - Unsubscribe from notifications
 
 ## GitHub Actions
 
-The bot runs daily at 10:00 AM UTC via GitHub Actions. Configure secrets in repository settings:
+The bot runs daily at 9:00 AM UTC via GitHub Actions. Configure secrets in repository settings:
 - `TELEGRAM_BOT_TOKEN`
-- `TELEGRAM_CHAT_ID`
+- `MONGODB_URI` (for persistent storage)
 
 ## License
 
