@@ -1,9 +1,12 @@
 name: Monitor Cinema Programs
 
 on:
-  # Run every day at 9:00 AM UTC (10:00 CET in winter, 11:00 CEST in summer)
+  # Run every day at 8:10 AM UTC (9:10 CET in winter, 10:10 CEST in summer)
+  # Note: GitHub Actions cron uses UTC. To get 10:10 Germany time year-round,
+  # we'd need 9:10 UTC (winter) or 8:10 UTC (summer). Using 8:10 UTC as summer
+  # time lasts longer (March-October, ~7 months vs ~5 months winter).
   schedule:
-    - cron: '0 9 * * *'
+    - cron: '10 8 * * *'
 
   # Allow manual trigger from GitHub UI
   workflow_dispatch:
