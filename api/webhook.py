@@ -682,11 +682,12 @@ def _fetch_kinderkino_detail(detail_url: str) -> Optional[dict]:
         if duration_match:
             duration = int(duration_match.group(1))
 
-        # Extract FSK rating
+        # Extract FSK rating (extract just the number)
         fsk_rating = None
-        fsk_match = re.search(r'FSK:\s*([^\n,]+?)(?:,|Land:|$)', all_text, re.IGNORECASE)
+        fsk_match = re.search(r'FSK:\s*ab\s*(\d+)', all_text, re.IGNORECASE)
         if fsk_match:
-            fsk_rating = fsk_match.group(1).strip()
+            age = fsk_match.group(1)
+            fsk_rating = f"FSK: {age}"
 
         # Extract genre
         genre = None

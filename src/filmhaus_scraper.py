@@ -117,11 +117,20 @@ class FilmhausScraper(BaseCinemaScraper):
             if desc_elem:
                 description = desc_elem.get_text(strip=True)
 
+            # Try to fetch FSK rating from detail page
+            fsk_rating = None
+            detail_url = None
+            if title_link and title_link.get('href'):
+                detail_url = title_link['href']
+                if not detail_url.startswith('http'):
+                    detail_url = f"https://www.kunstkulturquartier.de{detail_url}"
+                fsk_rating = self._fetch_fsk_from_detail(detail_url)
+
             # All events from this page are Kinderkino category
             return Film(
                 title=title,
                 genres=["Kinderkino"],  # Category
-                fsk_rating=None,  # Parse if available in description
+                fsk_rating=fsk_rating,
                 duration=None,  # Parse if available in description
                 description=description,
                 poster_url=poster_url,
@@ -131,6 +140,37 @@ class FilmhausScraper(BaseCinemaScraper):
 
         except Exception as e:
             print(f"Error parsing Kinderkino event: {e}")
+            return None
+
+    def _fetch_fsk_from_detail(self, detail_url: str) -> Optional[str]:
+        """
+        Fetch FSK rating from film detail page.
+
+        Args:
+            detail_url: URL to film detail page
+
+        Returns:
+            FSK rating string (e.g., "FSK: ab 0") or None
+        """
+        try:
+            response = self.client.get(detail_url)
+            response.raise_for_status()
+            soup = BeautifulSoup(response.text, 'html.parser')
+
+            # Look for FSK information in the page text
+            # Format: "FSK: ab 0, empfohlen ab 5" or similar
+            for text_elem in soup.find_all(string=re.compile(r'FSK:', re.IGNORECASE)):
+                text = text_elem.strip()
+                # Extract FSK rating (e.g., "FSK: ab 0" or "FSK: ab 6")
+                match = re.search(r'FSK:\s*ab\s*(\d+)', text, re.IGNORECASE)
+                if match:
+                    age = match.group(1)
+                    return f"FSK: {age}"
+
+            return None
+
+        except Exception as e:
+            print(f"Error fetching FSK from detail page {detail_url}: {e}")
             return None
 
     def _parse_datetime(self, text: str, venue: str) -> Optional[Showtime]:
